@@ -3302,3 +3302,4 @@ else:
         st.write("---")
         filtro = st.selectbox("Fecha de Carga", obtener_meses_movil("FECHA CARGA",["CLARO_TELETALK_MOVIL.csv"]), key="tt_movil_iae")
         mostrar_iae_movil("dbo.CLARO_TELETALK_MOVIL","FECHA CARGA",filtro,"tt_movil_iae_asesor","tt")
+        # redeploy 2026-05-20
