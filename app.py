@@ -1871,11 +1871,11 @@ def mostrar_detalle_fija_general():
                 st.dataframe(pd.concat([tabla_dia,total_row],ignore_index=True), use_container_width=True, height=420)
 
     with tab3:
-        st.markdown("#### Ranking Supervisor — PAGADA vs CAÍDA")
+        st.markdown("#### 🏆 Ranking Supervisor")
         mostrar_ranking_supervisores_con_asesores(df_filtrado)
 
     with tab4:
-        st.markdown("#### Ranking de Asesores — solo asesores")
+        st.markdown("#### 👥 Ranking Asesores")
         ranking_asesores = ranking_asesores_fija_develz(df_filtrado)
         if ranking_asesores.empty:
             st.warning("No se encontraron datos para el ranking de asesores.")
@@ -1892,7 +1892,7 @@ def mostrar_detalle_fija_general():
         mostrar_ranking_departamentos_premium(df_filtrado)
 
     with tab6:
-        st.markdown("#### Estados Operativos (TIPIS agrupado)")
+        st.markdown("#### 📊 Estados Operativos")
         estados_df = estados_operativos_df(df_filtrado)
         if estados_df.empty: st.warning("No se encontraron datos de TIPIS.")
         else:
@@ -2686,15 +2686,24 @@ def mostrar_detalle_movil_general():
 
     meses = obtener_meses_teletalk_movil_caidas()
 
-    f1, f2, f3 = st.columns([1.2, 1.2, 1.4])
-    with f1:
-        filtro_mes = st.selectbox("Fecha de Venta", meses, key="tt_movil_caidas_mes")
-    with f2:
-        filtro_etapa = st.selectbox(
-            "Etapa",
-            ["Todas", "Base Pagados", "2da Caída - 3 meses", "3ra Caída - 6 meses"],
-            key="tt_movil_caidas_etapa"
-        )
+    st.markdown("### 🔎 Filtros")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    with c1:
+        filtro_mes = st.selectbox("Fecha de Venta", meses, key="movil_fecha_venta")
+
+    with c2:
+        filtro_canal = st.selectbox("Canal", ["Todos"], key="movil_canal")
+
+    with c3:
+        filtro_pago = st.selectbox("Estado de Pago", ["Todos"], key="movil_estado_pago")
+
+    with c4:
+        filtro_supervisor = st.selectbox("Supervisor", ["Todos"], key="movil_supervisor")
+
+    with c5:
+        filtro_tipificacion = st.selectbox("Tipificación", ["Todos"], key="movil_tipificacion")
 
     with st.spinner("Cargando base y cruzando TELEFONO contra MSISDN..."):
         df = construir_detalle_movil_teletalk_caidas(filtro_mes)
@@ -2712,134 +2721,39 @@ def mostrar_detalle_movil_general():
             "Hay filas sin número. La 3ra caída cruza TELEFONO vs MSISDN y se filtra por FEC ACTIV CTR; la 2da caída cruza DNI CLIENTE vs DNI RUC y solo cuenta COMISION > 0."
         )
 
-    with f3:
-        filtro_asesor = st.selectbox(
-            "Asesor",
-            ["Todos"] + sorted(df["ASESOR"].fillna("Sin Asesor").astype(str).unique().tolist()),
-            key="tt_movil_caidas_asesor"
-        )
-
     df_filtrado = df.copy()
-
-    if filtro_etapa != "Todas":
-        df_filtrado = df_filtrado[df_filtrado["Etapa"] == filtro_etapa].copy()
-
-    if filtro_asesor != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["ASESOR"] == filtro_asesor].copy()
 
     base_lineas = _lineas_etapa(df_filtrado, "Base Pagados")
     segunda_lineas = _lineas_etapa(df_filtrado, "2da Caída - 3 meses")
     tercera_lineas = _lineas_etapa(df_filtrado, "3ra Caída - 6 meses")
     comision_total = pd.to_numeric(df_filtrado["COMISION"], errors="coerce").fillna(0).sum()
 
-    st.markdown("### Resumen Ejecutivo")
-    k1, k2, k3, k4 = st.columns(4)
-    _kpi_movil_teletalk_card(k1, "Base Pagados", f"{base_lineas:,}", "Total líneas de la base", "#059669")
-    _kpi_movil_teletalk_card(k2, "2da Caída", f"{segunda_lineas:,}", "DNI cruza; comisión 2da", "#d97706")
-    _kpi_movil_teletalk_card(k3, "3ra Caída", f"{tercera_lineas:,}", "Base que cruzó con MSISDN 6M", "#dc2626")
-    _kpi_movil_teletalk_card(k4, "Comisión Total", formatear_moneda(comision_total), "Base + adicional 2da/3ra", color_borde)
-
-    st.write("---")
-
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Resumen por Etapa",
-        "📋 Ver 2da y 3ra Caída",
-        "🏆 Ranking Asesores",
-        "⬇️ Descargar Base"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📋 Detalle Ventas",
+        "📆 Ventas por Día",
+        "🏆 Ranking Supervisor",
+        "👥 Ranking Asesores",
+        "📍 Ranking Departamentos",
+        "📊 Estados Operativos"
     ])
 
     with tab1:
-        st.markdown("#### 📊 Resumen Ejecutivo por Etapa")
-        st.caption("Cruce correcto: Base pagados desde CLARO_TELETALK_MOVIL. La 2da caída cruza DNI CLIENTE de la base contra DNI RUC de segunda caída y su comisión se toma desde CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA. La 3ra caída se mantiene por TELEFONO vs MSISDN y el filtro Fecha de Venta usa FEC ACTIV CTR.")
-
-        resumen = _resumen_etapas_teletalk(df_filtrado)
-
-        if resumen.empty:
-            st.warning("No hay datos para mostrar en el resumen por etapa.")
-        else:
-            resumen_show = resumen.copy()
-            resumen_show["Comision"] = pd.to_numeric(
-                resumen_show["Comision"], errors="coerce"
-            ).fillna(0).map(formatear_moneda)
-
-            st.dataframe(
-                resumen_show,
-                use_container_width=True,
-                height=180
-            )
-
-            st.markdown("#### ➕ Detalle de clientes por etapa")
-            st.caption("Abre cada etapa para ver Nombre, DNI, cuántas líneas tiene el cliente y Comisión. También puedes exportar cada etapa en Excel.")
-            mostrar_resumen_etapas_expandible_teletalk(df_filtrado, resumen, filtro_mes)
-
-            try:
-                _grafico_resumen_etapa_gerencial(resumen)
-            except Exception as e:
-                st.warning(f"No se pudo mostrar el gráfico gerencial: {e}")
+        st.info("Sin contenido por configurar")
 
     with tab2:
-        st.markdown("#### Vista directa de Segunda Caída y Tercera Caída")
-        st.caption("Se muestran líneas de la base que cruzaron; en 2da caída la comisión es el pago adicional tomado del archivo SEGUNDA_CAIDA.")
-        df_caidas = df_filtrado[df_filtrado["Etapa"].isin(["2da Caída - 3 meses", "3ra Caída - 6 meses"])].copy()
-
-        if df_caidas.empty:
-            st.warning("No hay datos de segunda o tercera caída con los filtros seleccionados.")
-        else:
-            cols = [
-                "Etapa", "FECHA_BASE", "ASESOR", "Cliente", "Documento", "NUMERO_LINEA",
-                "Departamento", "Transaccion", "Plan", "CF",
-                "DIAS PORTADAS", "COMISION", "COMISION ADICIONAL 2DA", "Archivo"
-            ]
-            for c in cols:
-                if c not in df_caidas.columns:
-                    df_caidas[c] = ""
-            df_show = df_caidas[cols].copy()
-            df_show["COMISION"] = pd.to_numeric(df_show["COMISION"], errors="coerce").fillna(0).map(formatear_moneda)
-            if "COMISION ADICIONAL 2DA" in df_show.columns:
-                df_show["COMISION ADICIONAL 2DA"] = pd.to_numeric(df_show["COMISION ADICIONAL 2DA"], errors="coerce").fillna(0).map(formatear_moneda)
-            st.dataframe(df_show, use_container_width=True, height=500)
-
-            st.download_button(
-                "⬇️ Descargar solo 2da y 3ra caída",
-                data=df_caidas.drop(columns=["_FECHA_ORIGINAL_DT", "_FECHA_BASE_DT"], errors="ignore").to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                file_name=f"teletalk_movil_2da_3ra_caida_{filtro_mes.replace(' ', '_')}.csv",
-                mime="text/csv",
-                key="dl_tt_movil_2da_3ra",
-                on_click=registrar_descarga,
-                args=("Teletalk Móvil 2da y 3ra Caída", f"teletalk_movil_2da_3ra_caida_{filtro_mes.replace(' ', '_')}.csv", f"Mes: {filtro_mes}")
-            )
+        st.info("Sin contenido por configurar")
 
     with tab3:
-        st.markdown("#### Ranking de asesores por líneas")
-        ranking = _ranking_asesores_teletalk(df_filtrado)
-        if ranking.empty:
-            st.warning("No hay datos para ranking.")
-        else:
-            ranking_show = ranking.copy()
-            ranking_show["Comision"] = ranking_show["Comision"].apply(
-                lambda x: formatear_moneda(x) if isinstance(x, (int, float)) else x
-            )
-            st.dataframe(ranking_show, use_container_width=True, height=420)
+        st.info("Sin contenido por configurar")
 
     with tab4:
-        st.markdown("#### Descargar base completa filtrada")
-        df_export = df_filtrado.drop(columns=["_FECHA_ORIGINAL_DT", "_FECHA_BASE_DT"], errors="ignore").copy()
-        df_show = df_export.copy()
-        if "COMISION" in df_show.columns:
-            df_show["COMISION"] = pd.to_numeric(df_show["COMISION"], errors="coerce").fillna(0).map(formatear_moneda)
-        st.dataframe(df_show, use_container_width=True, height=420)
+        st.info("Sin contenido por configurar")
 
-        st.download_button(
-            "⬇️ Descargar base filtrada TELETALK móvil",
-            data=df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-            file_name=f"detalle_movil_teletalk_cruce_numero_{filtro_mes.replace(' ', '_')}.csv",
-            mime="text/csv",
-            key="dl_tt_movil_base_filtrada",
-            on_click=registrar_descarga,
-            args=("Detalle Móvil Teletalk", f"detalle_movil_teletalk_cruce_numero_{filtro_mes.replace(' ', '_')}.csv", f"Mes: {filtro_mes}")
-        )
+    with tab5:
+        st.info("Sin contenido por configurar")
 
-
+    with tab6:
+        st.info("Sin contenido por configurar")
 
 # =========================================================
 # 10B. LOGIN / SEGURIDAD DE ACCESO
@@ -3205,10 +3119,9 @@ login_inicio()
 # 11. SIDEBAR / NAVEGACIÓN
 # =========================================================
 OPCIONES_FIJA = [
-    "Inicio: Reporte Comparativo","Detalle Fija General",
+    "Inicio: Reporte Comparativo",
+    "Detalle Fija General",
     "F - COM.INDIRECTA 2da ETAPA",
-    "D&C Factor Instalación","D&C Factor F. Venta",
-    "Teletalk Factor Instalación","Teletalk Factor F. Venta",
 ]
 
 # La auditoría queda oculta para todos y solo aparece al administrador Fiorella.
@@ -3216,9 +3129,8 @@ if st.session_state.get("usuario_logueado", "") == "Fiorella":
     OPCIONES_FIJA.append("🔒 Auditoría Descargas")
 
 OPCIONES_MOVIL = [
-    "Inicio: Reporte Comparativo MOVIL","Detalle Móvil General",
-    "D&C Factor F. Venta MOVIL","D&C IAE ASESOR MOVIL",
-    "Teletalk Factor F. Venta MOVIL","Teletalk IAE ASESOR MOVIL",
+    "Inicio: Reporte Comparativo MOVIL",
+    "Detalle Móvil General",
 ]
 SEP_FIJA="📡 FIJA"; SEP_MOVIL="📱 MÓVIL"
 SEPARADORES = {SEP_FIJA, SEP_MOVIL}
@@ -3329,6 +3241,7 @@ else:
 
     if opcion_movil == "Detalle Móvil General":
         mostrar_detalle_movil_general()
+    
 
     elif opcion_movil == "Inicio: Reporte Comparativo MOVIL":
         set_bg(img_caratula)
@@ -3380,29 +3293,9 @@ else:
         with col_tt:
             st.markdown(f'<div class="kpi-wrapper"><div class="box-header-tt">TELETALK CONTACT CENTER</div><div class="data-card-tt"><span class="label">Comisión pagada</span><span class="value">{formatear_moneda(c_tt)}</span></div><div class="data-card-tt"><span class="label">Total ventas</span><span class="value">{t_tt:,}</span></div><div class="data-card-tt"><span class="label">Portabilidades</span><span class="value">{p_tt:,}</span></div><div class="data-card-tt"><span class="label">Altas nuevas</span><span class="value">{a_tt:,}</span></div></div>', unsafe_allow_html=True)
 
-    elif opcion_movil == "D&C Factor F. Venta MOVIL":
-        set_bg(img_dc)
-        st.markdown('<div class="section-title-dc">D&C Factor F. Venta MÓVIL</div>', unsafe_allow_html=True)
-        st.markdown('<div class="small-subtitle-dc">AVANCE POR FECHA DE VENTA</div>', unsafe_allow_html=True)
-        st.write("---")
-        filtro = st.selectbox("Fecha de Venta", obtener_meses_movil("FECHA OPERACION",["CLARO_DC_MOVIL.csv"]), key="dc_movil_fv")
-        mostrar_factor_movil("dbo.CLARO_DC_MOVIL","FECHA OPERACION",filtro,"dc")
-
-    elif opcion_movil == "D&C IAE ASESOR MOVIL":
-        set_bg(img_dc)
-        st.markdown('<div class="section-title-dc">D&C IAE ASESOR MÓVIL</div>', unsafe_allow_html=True)
-        st.write("---")
-        filtro = st.selectbox("Fecha de Operación", obtener_meses_movil("FECHA OPERACION",["CLARO_DC_MOVIL.csv"]), key="dc_movil_iae")
-        mostrar_iae_movil("dbo.CLARO_DC_MOVIL","FECHA OPERACION",filtro,"dc_movil_iae_asesor","dc")
-
-    elif opcion_movil == "Teletalk Factor F. Venta MOVIL":
-        set_bg(img_tt)
-        st.markdown('<div class="section-title-tt">Teletalk Factor F. Venta MÓVIL</div>', unsafe_allow_html=True)
-        st.markdown('<div class="small-subtitle-tt">AVANCE POR FECHA DE VENTA</div>', unsafe_allow_html=True)
-        st.write("---")
-        filtro = st.selectbox("Fecha de Venta", obtener_meses_movil("FECHA OPERACION",["CLARO_TELETALK_MOVIL.csv"]), key="tt_movil_fv")
-        mostrar_factor_movil("dbo.CLARO_TELETALK_MOVIL","FECHA OPERACION",filtro,"tt")
-
+    
+    
+    
     elif opcion_movil == "Teletalk IAE ASESOR MOVIL":
         set_bg(img_tt)
         st.markdown('<div class="section-title-tt">Teletalk IAE ASESOR MÓVIL</div>', unsafe_allow_html=True)
