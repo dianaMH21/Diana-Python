@@ -119,7 +119,7 @@ def preparar_fechas_fija(df):
     return df
 
 def preparar_fechas_movil(df):
-    for col in ["FECHA OPERACION", "FECHA CARGA"]:
+    for col in ["FECHA OPERACION", "FECHA CARGA", "FECHA DE VENTA", "FECHA VENTA", "Fecha de Venta", "Fecha Venta"]:
         if col not in df.columns:
             continue
         serie = df[col].astype(str).str.strip()
@@ -2666,6 +2666,780 @@ def _grafico_resumen_etapa_gerencial(resumen):
     st.altair_chart(grafico, use_container_width=True)
 
 
+
+# =========================================================
+# 10C. RESUMEN GENERAL MÓVIL — D&C + TELETALK
+# =========================================================
+def _leer_csv_movil_con_fallback(nombres):
+    """Lee el primer CSV existente de la lista para soportar nombres antiguos y nuevos."""
+    for nombre in nombres:
+        ruta = os.path.join(DATA_DIR, nombre)
+        if os.path.exists(ruta):
+            df = cargar_csv(nombre)
+            if not df.empty:
+                return df, nombre
+    return pd.DataFrame(), nombres[0] if nombres else ""
+
+
+def _normalizar_nombre_columna_movil(nombre):
+    """Normaliza nombres de columnas para evitar fallas por espacios, mayúsculas o tildes."""
+    import re
+    s = str(nombre).strip().upper()
+    for a, b in [("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"), ("Ü", "U")]:
+        s = s.replace(a, b)
+    s = re.sub(r"[^A-Z0-9]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def encontrar_columna_flexible(df, posibles):
+    """Busca una columna de forma flexible, aunque venga con espacios/tildes/diferente capitalización."""
+    if df is None or df.empty:
+        return None
+    mapa = {_normalizar_nombre_columna_movil(c): c for c in df.columns}
+    for posible in posibles:
+        key = _normalizar_nombre_columna_movil(posible)
+        if key in mapa:
+            return mapa[key]
+    # Búsqueda secundaria por inclusión de palabras clave
+    posibles_norm = [_normalizar_nombre_columna_movil(p) for p in posibles]
+    for key, col_real in mapa.items():
+        for p in posibles_norm:
+            if p and (p in key or key in p):
+                return col_real
+    return None
+
+
+def _parse_fecha_movil_robusta(serie):
+    """Convierte fechas mixtas del CSV: dd/mm/yyyy, yyyy-mm-dd, con hora o serial Excel."""
+    if serie is None:
+        return pd.Series(pd.NaT)
+    s = serie.copy()
+    # Si viene como serial Excel numérico
+    num = pd.to_numeric(s, errors="coerce")
+    fechas_num = pd.to_datetime(num, unit="D", origin="1899-12-30", errors="coerce")
+    fechas_txt = pd.to_datetime(s.astype(str).str.strip(), errors="coerce", dayfirst=True)
+    fechas = fechas_txt.fillna(fechas_num)
+    return fechas
+
+
+def _obtener_fecha_venta_movil_general(df):
+    col = encontrar_columna_flexible(df, [
+        "FECHA DE VENTA", "Fecha de Venta", "FECHA VENTA", "Fecha Venta",
+        "FECHA CREACION", "FECHA DE CREACION", "FECHA CREACIÓN", "FECHA DE CREACIÓN",
+        "FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación",
+        "FECHA CARGA", "Fecha Carga"
+    ])
+    if col:
+        return _parse_fecha_movil_robusta(df[col]), col
+    return pd.Series(pd.NaT, index=df.index), ""
+
+
+def _obtener_tipo_operacion_movil_general(df):
+    col = encontrar_columna_flexible(df, [
+        "Cliente - Tipo De Operacion", "Cliente - Tipo De Operación",
+        "CLIENTE TIPO DE OPERACION", "CLIENTE TIPO DE OPERACIÓN",
+        "CLIENTE - TIPO DE OPERACION", "CLIENTE - TIPO DE OPERACIÓN",
+        "Tipo De Operacion", "Tipo De Operación", "TIPO DE OPERACION", "TIPO DE OPERACIÓN",
+        "TIPO OPERACION", "TIPO OPERACIÓN",
+        "Cliente - Tipo Operacion", "Cliente - Tipo Operación"
+    ])
+    if col:
+        return (
+            df[col]
+            .fillna("")
+            .astype(str)
+            .str.replace(r" ", " ", regex=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .str.upper()
+            .replace(["NAN", "NONE", "NULL", "NAT", "<NA>"], "")
+        ), col
+    return pd.Series([""] * len(df), index=df.index), ""
+
+def _obtener_supervisor_movil_general(df):
+    """Supervisor para Detalle Móvil General: usa la columna DEVELZ/CRM exacta solicitada."""
+    col = encontrar_columna_flexible(df, [
+        "Datos Adicionales - Supervisor",
+        "Datos adicionales - Supervisor",
+        "DATOS ADICIONALES - SUPERVISOR"
+    ])
+    if col:
+        return (
+            df[col]
+            .fillna("Sin Supervisor")
+            .astype(str)
+            .str.replace(r" ", " ", regex=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .replace("", "Sin Supervisor")
+        ), col
+    return pd.Series(["Sin Supervisor"] * len(df), index=df.index), "NO ENCONTRADA"
+
+
+def _obtener_tipificacion_movil_general(df):
+    """Tipificación para Detalle Móvil General: usa Estados - Venta Especificacion."""
+    col = encontrar_columna_flexible(df, [
+        "Estados - Venta Especificacion",
+        "Estados - Venta Especificación",
+        "ESTADOS - VENTA ESPECIFICACION",
+        "ESTADOS - VENTA ESPECIFICACIÓN"
+    ])
+    if col:
+        return (
+            df[col]
+            .fillna("Sin Tipificación")
+            .astype(str)
+            .str.replace(r" ", " ", regex=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .replace("", "Sin Tipificación")
+        ), col
+    return pd.Series(["Sin Tipificación"] * len(df), index=df.index), "NO ENCONTRADA"
+
+
+
+@st.cache_data(ttl=300)
+def obtener_tipificaciones_solo_movil_general():
+    """
+    Opciones del filtro Tipificación para Detalle Móvil General.
+    IMPORTANTE: lee SOLO MOVIL_DC.csv y MOVIL_TELETALK.csv,
+    y SOLO la columna Estados - Venta Especificacion.
+    No usa FIJA, no usa CLARO y no mezcla TIPIS de otras pestañas.
+    """
+    opciones = set()
+    for archivo in ["MOVIL_DC.csv", "MOVIL_TELETALK.csv"]:
+        df = cargar_csv(archivo)
+        if df.empty:
+            continue
+
+        # Búsqueda estricta de la columna solicitada en móviles.
+        col = encontrar_columna_flexible(df, [
+            "Estados - Venta Especificacion",
+            "Estados - Venta Especificación",
+            "ESTADOS - VENTA ESPECIFICACION",
+            "ESTADOS - VENTA ESPECIFICACIÓN"
+        ])
+        if not col:
+            continue
+
+        serie = (
+            df[col]
+            .fillna("Sin Tipificación")
+            .astype(str)
+            .str.replace(r" ", " ", regex=False)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+        )
+        serie = serie.replace(["", "0", "0.0", "NAN", "NONE", "NULL", "NAT", "<NA>"], "Sin Tipificación")
+        opciones.update(serie.dropna().unique().tolist())
+
+    return ["Todos"] + sorted(opciones)
+
+def _normalizar_documento_movil_general(serie):
+    """
+    Limpia DNI/documento para cruzar MOVIL vs CLARO móvil.
+    Corrige espacios, .0, guiones y caracteres invisibles.
+    """
+    s = serie.fillna("").astype(str).str.strip()
+    s = s.str.replace("\u00a0", "", regex=False)
+    s = s.str.replace("\ufeff", "", regex=False)
+    s = s.str.replace(r"\.0+$", "", regex=True)
+    s = s.str.replace(r"[^0-9A-Za-z]", "", regex=True)
+    s = s.str.upper().replace(["NAN", "NONE", "NULL", "NAT", "<NA>"], "")
+    return s
+
+
+def _obtener_documento_movil_general(df):
+    col = encontrar_columna_flexible(df, [
+        "Cliente - Documento", "Cliente - Nro Documento", "Cliente Documento",
+        "DOCUMENTO", "DNI", "DNI CLIENTE", "NRO DOCUMENTO", "NUMERO DOCUMENTO"
+    ])
+    if col:
+        return _normalizar_documento_movil_general(df[col]), col
+    return pd.Series([""] * len(df), index=df.index), "NO ENCONTRADA"
+
+
+@st.cache_data(ttl=300)
+def construir_pagos_claro_movil_por_dni_mes(filtro_mes="Todos los meses", filtro_canal="Todos"):
+    """
+    Base REAL de liquidación móvil desde CLARO.
+
+    Corrección final:
+    - NO agrupa la comisión por DNI.
+    - Conserva cada fila real de CLARO con su propia COMISION TOTAL.
+    - Usa TRANSACCION de CLARO como Tipo Operacion.
+    - Excluye TRANSACCION vacía o igual a 0 para no arrastrar el primer valor incorrecto.
+    - Estado Pago: COMISION TOTAL > 0 = PAGADA; COMISION TOTAL <= 0 = NO PAGADA.
+    - Fecha del filtro: FECHA OPERACION.
+    """
+    configuracion = [
+        ("D&C", "CLARO_DC_MOVIL.csv"),
+        ("Teletalk", "CLARO_TELETALK_MOVIL.csv"),
+    ]
+    bases = []
+    for canal, archivo in configuracion:
+        if filtro_canal != "Todos" and canal != filtro_canal:
+            continue
+        df = cargar_csv(archivo)
+        if df.empty:
+            continue
+
+        df = df.copy()
+        col_dni = encontrar_columna_flexible(df, [
+            "DNI CLIENTE", "DNI", "Cliente - Documento", "Cliente Documento", "DOCUMENTO CLIENTE", "DOCUMENTO"
+        ])
+        col_fecha = encontrar_columna_flexible(df, [
+            "FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"
+        ])
+        col_comision = encontrar_columna_flexible(df, [
+            "COMISION TOTAL", "COMISIÓN TOTAL", "Comision Total", "Comisión Total", "MONTO"
+        ])
+        col_transaccion = encontrar_columna_flexible(df, [
+            "TRANSACCION", "TRANSACCIÓN", "Transaccion", "Transacción",
+            "TIPO TRANSACCION", "TIPO DE VENTA", "Tipo Transaccion"
+        ])
+        col_cliente = encontrar_columna_flexible(df, [
+            "CLIENTE", "NOMBRE CLIENTE", "Cliente", "NOMBRE", "Nombre Cliente"
+        ])
+        col_plan = encontrar_columna_flexible(df, [
+            "PLAN", "Plan", "PRODUCTO", "Producto", "SERVICIO", "Servicio"
+        ])
+
+        if not col_dni or not col_fecha or not col_comision:
+            continue
+
+        df["Canal"] = canal
+        df["Archivo"] = archivo
+        df["DOCUMENTO_KEY"] = _normalizar_documento_movil_general(df[col_dni])
+        df["Documento"] = df["DOCUMENTO_KEY"]
+        df["_FECHA_OPERACION_DT"] = _parse_fecha_movil_robusta(df[col_fecha])
+        df["_ANIO"] = df["_FECHA_OPERACION_DT"].dt.year.astype("Int64")
+        df["_MES"] = df["_FECHA_OPERACION_DT"].dt.month.astype("Int64")
+        df["FECHA DE VENTA"] = df["_FECHA_OPERACION_DT"].dt.strftime("%d/%m/%Y").fillna("Sin fecha")
+        df["COMISION_REAL"] = pd.to_numeric(df[col_comision], errors="coerce").fillna(0)
+
+        if col_transaccion:
+            df["Tipo Operacion"] = (
+                df[col_transaccion]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+                .str.upper()
+                .str.replace("Í", "I", regex=False)
+            )
+        else:
+            df["Tipo Operacion"] = "Sin Transacción"
+
+        # No tomar ceros ni vacíos como tipo de operación.
+        df["Tipo Operacion"] = df["Tipo Operacion"].replace([
+            "", "0", "0.0", "NAN", "NONE", "NULL", "NAT", "<NA>"
+        ], "")
+        df = df[(df["DOCUMENTO_KEY"] != "") & df["_FECHA_OPERACION_DT"].notna()].copy()
+        df = df[df["Tipo Operacion"] != ""].copy()
+
+        if filtro_mes != "Todos los meses":
+            m, y = parse_mes_anio(filtro_mes)
+            if m and y:
+                df = df[(df["_MES"] == m) & (df["_ANIO"] == y)].copy()
+
+        if df.empty:
+            continue
+
+        df["Estado Pago"] = "NO PAGADA"
+        df.loc[df["COMISION_REAL"] > 0, "Estado Pago"] = "PAGADA"
+        df["Cliente"] = df[col_cliente].fillna("Sin Cliente").astype(str).str.strip().replace("", "Sin Cliente") if col_cliente else "Sin Cliente"
+        df["Plan"] = df[col_plan].fillna("Sin Plan").astype(str).str.strip().replace("", "Sin Plan") if col_plan else "Sin Plan"
+        df["Transaccion"] = df["Tipo Operacion"]
+        df["Columna Fecha"] = col_fecha
+        df["Columna Tipo Operacion"] = col_transaccion if col_transaccion else "TRANSACCION NO ENCONTRADA"
+        df["Columna Documento"] = col_dni
+
+        bases.append(df[[
+            "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_OPERACION_DT", "_ANIO", "_MES",
+            "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Transaccion", "Cliente", "Plan",
+            "COMISION_REAL", "Estado Pago", "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
+        ]])
+
+    cols = [
+        "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_OPERACION_DT", "_ANIO", "_MES",
+        "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Transaccion", "Cliente", "Plan",
+        "COMISION_REAL", "Estado Pago", "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
+    ]
+    if not bases:
+        return pd.DataFrame(columns=cols)
+    return pd.concat(bases, ignore_index=True).reset_index(drop=True)
+
+
+def _sumar_comision_real_unica(df):
+    """Suma COMISION TOTAL real por fila de CLARO, sin agrupar ni repartir por DNI."""
+    if df is None or df.empty or "COMISION_REAL" not in df.columns:
+        return 0.0
+    return float(pd.to_numeric(df["COMISION_REAL"], errors="coerce").fillna(0).sum())
+
+
+@st.cache_data(ttl=300)
+def construir_resumen_movil_general(filtro_mes="Todos los meses"):
+    """
+    Detalle Móvil General consolidado.
+
+    Lógica final:
+    1. MOVIL_DC/MOVIL_TELETALK solo validan DNI únicos comerciales.
+    2. CLARO_DC_MOVIL/CLARO_TELETALK_MOVIL define las ventas reales pagadas/no pagadas.
+    3. El Tipo Operacion sale de TRANSACCION de CLARO, no de Cliente - Tipo De Operacion.
+    4. Cada fila de CLARO conserva su propia COMISION TOTAL.
+    """
+    configuracion_movil = [
+        ("D&C", ["MOVIL_DC.csv"]),
+        ("Teletalk", ["MOVIL_TELETALK.csv"]),
+    ]
+
+    bases_movil = []
+    for canal, posibles_archivos in configuracion_movil:
+        df, archivo_usado = _leer_csv_movil_con_fallback(posibles_archivos)
+        if df.empty:
+            continue
+
+        df = df.copy()
+        fecha_dt, col_fecha = _obtener_fecha_venta_movil_general(df)
+        documento, col_documento = _obtener_documento_movil_general(df)
+        supervisor, col_supervisor = _obtener_supervisor_movil_general(df)
+        tipificacion, col_tipificacion = _obtener_tipificacion_movil_general(df)
+
+        df["Canal"] = canal
+        df["DOCUMENTO_KEY"] = documento
+        df["Documento"] = documento
+        df["_FECHA_VENTA_MOVIL_DT"] = fecha_dt
+        df["Cliente"] = _obtener_cliente_movil_teletalk(df)
+        df["ASESOR"] = _obtener_campo_movil_seguro(df, [
+            "USUARIO", "ASESOR", "VENDEDOR", "DISTRIBUIDOR", "EJECUTIVO", "CREADOR", "Usuario", "Asesor"
+        ], "Sin Asesor")
+        df["SUPERVISOR"] = supervisor
+        df["TIPIS"] = tipificacion
+        df["Departamento"] = _obtener_campo_movil_seguro(df, [
+            "DEPARTAMENTO", "Departamento", "departamento", "DPTO", "REGION", "REGIÓN", "Región"
+        ], "Sin Departamento")
+        df["Columna Supervisor"] = col_supervisor
+        df["Columna Tipificación"] = col_tipificacion
+        df["Columna Documento Movil"] = col_documento
+        df["Columna Fecha Movil"] = col_fecha if col_fecha else "NO ENCONTRADA"
+
+        df = df[df["DOCUMENTO_KEY"] != ""].copy()
+        if filtro_mes != "Todos los meses":
+            m, y = parse_mes_anio(filtro_mes)
+            if m and y and "_FECHA_VENTA_MOVIL_DT" in df.columns:
+                # El filtro principal de pagos usa FECHA OPERACION de CLARO.
+                # Este filtro en MOVIL solo reduce el universo comercial cuando exista fecha válida.
+                df = df[(df["_FECHA_VENTA_MOVIL_DT"].dt.month == m) & (df["_FECHA_VENTA_MOVIL_DT"].dt.year == y)].copy()
+
+        if not df.empty:
+            # Un solo registro comercial por Canal + DNI para que MOVIL no infle ventas.
+            df = df.sort_values("_FECHA_VENTA_MOVIL_DT", ascending=False, na_position="last")
+            df = df.drop_duplicates(subset=["Canal", "DOCUMENTO_KEY"], keep="first")
+            bases_movil.append(df[[
+                "Canal", "DOCUMENTO_KEY", "Documento", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR",
+                "Departamento", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
+            ]])
+
+    columnas_salida = [
+        "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
+        "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
+        "ASESOR", "Departamento", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+        "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
+    ]
+
+    if not bases_movil:
+        return pd.DataFrame(columns=columnas_salida + ["Venta Valida"])
+
+    movil_unicos = pd.concat(bases_movil, ignore_index=True)
+    movil_unicos = movil_unicos.drop_duplicates(subset=["Canal", "DOCUMENTO_KEY"], keep="first")
+
+    claro = construir_pagos_claro_movil_por_dni_mes(filtro_mes, "Todos")
+
+    if not claro.empty:
+        # Solo ventas reales de CLARO cuyo DNI exista en MOVIL del mismo canal.
+        df_all = claro.merge(
+            movil_unicos,
+            on=["Canal", "DOCUMENTO_KEY"],
+            how="inner",
+            suffixes=("", "_MOVIL")
+        )
+        # Si el documento llegó de CLARO vacío por alguna razón, preservamos el de MOVIL.
+        df_all["Documento"] = df_all["Documento"].fillna(df_all.get("Documento_MOVIL", ""))
+    else:
+        df_all = pd.DataFrame()
+
+    # DNI de MOVIL que no tuvieron ninguna fila en CLARO para el filtro seleccionado.
+    if claro.empty:
+        sin_claro = movil_unicos.copy()
+    else:
+        llaves_claro = claro[["Canal", "DOCUMENTO_KEY"]].drop_duplicates()
+        sin_claro = movil_unicos.merge(llaves_claro, on=["Canal", "DOCUMENTO_KEY"], how="left", indicator=True)
+        sin_claro = sin_claro[sin_claro["_merge"] == "left_only"].drop(columns=["_merge"], errors="ignore")
+
+    if not sin_claro.empty:
+        sin_claro = sin_claro.copy()
+        sin_claro["Archivo"] = "MOVIL sin cruce CLARO"
+        sin_claro["FECHA DE VENTA"] = "Sin fecha CLARO"
+        sin_claro["_FECHA_VENTA_DT"] = pd.NaT
+        sin_claro["_ANIO"] = pd.NA
+        sin_claro["_MES"] = pd.NA
+        sin_claro["Tipo Operacion"] = "SIN TRANSACCION CLARO"
+        sin_claro["Transaccion"] = "SIN TRANSACCION CLARO"
+        sin_claro["Plan"] = "Sin Plan"
+        sin_claro["COMISION_REAL"] = 0.0
+        sin_claro["COMISION"] = 0.0
+        sin_claro["Estado Pago"] = "NO PAGADA"
+        sin_claro["Columna Fecha"] = "FECHA OPERACION CLARO"
+        sin_claro["Columna Tipo Operacion"] = "TRANSACCION CLARO"
+        sin_claro["Columna Documento"] = sin_claro.get("Columna Documento Movil", "Cliente - Documento")
+        extra = sin_claro[[
+            "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
+            "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
+            "ASESOR", "Departamento", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+            "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
+        ]]
+        df_all = pd.concat([df_all, extra], ignore_index=True) if not df_all.empty else extra.copy()
+
+    if df_all.empty:
+        return pd.DataFrame(columns=columnas_salida + ["Venta Valida"])
+
+    if "_FECHA_OPERACION_DT" in df_all.columns:
+        df_all["_FECHA_VENTA_DT"] = df_all["_FECHA_OPERACION_DT"]
+    else:
+        df_all["_FECHA_VENTA_DT"] = pd.NaT
+
+    df_all["Tipo Operacion"] = (
+        df_all["Tipo Operacion"]
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+        .str.upper()
+        .str.replace("Í", "I", regex=False)
+    )
+    df_all["Tipo Operacion"] = df_all["Tipo Operacion"].replace(["0", "0.0", "NAN", "NONE", "NULL", "NAT", "<NA>"], "")
+    df_all["Venta Valida"] = df_all["Tipo Operacion"].ne("")
+    df_all["COMISION_REAL"] = pd.to_numeric(df_all.get("COMISION_REAL", 0), errors="coerce").fillna(0)
+    df_all["COMISION"] = df_all["COMISION_REAL"]
+    df_all["Estado Pago"] = "NO PAGADA"
+    df_all.loc[df_all["COMISION_REAL"] > 0, "Estado Pago"] = "PAGADA"
+
+    for col in columnas_salida:
+        if col not in df_all.columns:
+            df_all[col] = ""
+
+    return df_all[columnas_salida + ["Venta Valida"]].reset_index(drop=True)
+
+
+@st.cache_data(ttl=300)
+def obtener_meses_movil_general():
+    meses = set()
+    for _, posibles_archivos in [
+        ("D&C", ["MOVIL_DC.csv"]),
+        ("Teletalk", ["MOVIL_TELETALK.csv"]),
+    ]:
+        df, _ = _leer_csv_movil_con_fallback(posibles_archivos)
+        if df.empty:
+            continue
+        fecha_dt, _ = _obtener_fecha_venta_movil_general(df)
+        for f in fecha_dt.dropna():
+            meses.add(f"{MESES_ES[f.month].capitalize()} {f.year}")
+    return ["Todos los meses"] + sorted(meses, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)))
+
+
+@st.cache_data(ttl=300)
+def construir_comision_claro_movil_general(filtro_mes="Todos los meses", filtro_canal="Todos"):
+    """
+    Comisión para el KPI de Detalle Móvil General.
+    Fuente móvil de liquidación:
+    - CLARO_DC_MOVIL.csv
+    - CLARO_TELETALK_MOVIL.csv
+
+    Fecha de filtro: FECHA OPERACION
+    Monto: COMISION TOTAL
+    No toca archivos de fija.
+    """
+    configuracion = [
+        ("D&C", "CLARO_DC_MOVIL.csv"),
+        ("Teletalk", "CLARO_TELETALK_MOVIL.csv"),
+    ]
+    bases = []
+    for canal, archivo in configuracion:
+        if filtro_canal != "Todos" and canal != filtro_canal:
+            continue
+        df = cargar_csv(archivo)
+        if df.empty:
+            continue
+        df = df.copy()
+        col_fecha = encontrar_columna_flexible(df, [
+            "FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"
+        ])
+        col_comision = encontrar_columna_flexible(df, [
+            "COMISION TOTAL", "COMISIÓN TOTAL", "Comision Total", "Comisión Total"
+        ])
+        if not col_fecha or not col_comision:
+            continue
+        df["_FECHA_OPERACION_DT"] = _parse_fecha_movil_robusta(df[col_fecha])
+        df["_COMISION_TOTAL"] = pd.to_numeric(df[col_comision], errors="coerce").fillna(0)
+        if filtro_mes != "Todos los meses":
+            m, y = parse_mes_anio(filtro_mes)
+            if m and y:
+                df = df[(df["_FECHA_OPERACION_DT"].dt.month == m) & (df["_FECHA_OPERACION_DT"].dt.year == y)].copy()
+        if not df.empty:
+            bases.append(df[["_FECHA_OPERACION_DT", "_COMISION_TOTAL"]])
+    if not bases:
+        return 0.0
+    base = pd.concat(bases, ignore_index=True)
+    return float(pd.to_numeric(base["_COMISION_TOTAL"], errors="coerce").fillna(0).sum())
+
+
+def resumen_general_movil_df(df):
+    # Tabla ejecutiva por canal. Se retira Operaciones Únicas y se agrega Caída.
+    cols = ["Canal", "Total Ventas", "Pagadas", "No Pagadas", "Caída", "Comision", "% Participación"]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    base = df[df["Venta Valida"]].copy()
+    if base.empty:
+        return pd.DataFrame(columns=cols)
+
+    filas = []
+    for canal, g in base.groupby("Canal", dropna=False):
+        total_ventas = int(g["Tipo Operacion"].count())
+        pagadas = int((g["Estado Pago"] == "PAGADA").sum())
+        no_pagadas = int((g["Estado Pago"] == "NO PAGADA").sum())
+        caida = (no_pagadas / total_ventas * 100) if total_ventas > 0 else 0
+        filas.append({
+            "Canal": canal,
+            "Total Ventas": total_ventas,
+            "Pagadas": pagadas,
+            "No Pagadas": no_pagadas,
+            "Caída": f"{caida:.2f}%",
+            "Comision": _sumar_comision_real_unica(g),
+        })
+    resumen = pd.DataFrame(filas).sort_values("Total Ventas", ascending=False).reset_index(drop=True)
+    total_general = int(resumen["Total Ventas"].sum()) if not resumen.empty else 0
+    resumen["% Participación"] = resumen["Total Ventas"].apply(lambda x: f"{(x / total_general * 100):.2f}%" if total_general > 0 else "0.00%")
+
+    pagadas_total = int((base["Estado Pago"] == "PAGADA").sum())
+    no_pagadas_total = int((base["Estado Pago"] == "NO PAGADA").sum())
+    caida_total = (no_pagadas_total / total_general * 100) if total_general > 0 else 0
+    total_row = pd.DataFrame([{
+        "Canal": "TOTAL",
+        "Total Ventas": total_general,
+        "Pagadas": pagadas_total,
+        "No Pagadas": no_pagadas_total,
+        "Caída": f"{caida_total:.2f}%",
+        "Comision": _sumar_comision_real_unica(base),
+        "% Participación": "100.00%" if total_general > 0 else "0.00%"
+    }])
+    return pd.concat([resumen[cols], total_row[cols]], ignore_index=True)
+
+def resumen_diario_movil_df(df):
+    cols = ["Fecha", "D&C", "Teletalk", "Total Ventas", "Pagadas", "No Pagadas", "Comision"]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    base = df[df["Venta Valida"] & df["_FECHA_VENTA_DT"].notna()].copy()
+    if base.empty:
+        return pd.DataFrame(columns=cols)
+
+    grp = (
+        base.groupby(["_FECHA_VENTA_DT", "Canal"], as_index=False)
+        .agg(Ventas=("Tipo Operacion", "count"))
+    )
+    pivot = grp.pivot_table(index="_FECHA_VENTA_DT", columns="Canal", values="Ventas", aggfunc="sum", fill_value=0).reset_index()
+    for c in ["D&C", "Teletalk"]:
+        if c not in pivot.columns:
+            pivot[c] = 0
+
+    estados = base.groupby("_FECHA_VENTA_DT", as_index=False).agg(
+        Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
+        **{"No Pagadas": ("Estado Pago", lambda x: (x == "NO PAGADA").sum())}
+    )
+    comisiones = []
+    for fecha, g in base.groupby("_FECHA_VENTA_DT"):
+        comisiones.append({"_FECHA_VENTA_DT": fecha, "Comision": _sumar_comision_real_unica(g)})
+    com = pd.DataFrame(comisiones)
+
+    out = pivot.merge(estados, on="_FECHA_VENTA_DT", how="left").merge(com, on="_FECHA_VENTA_DT", how="left")
+    out["Total Ventas"] = pd.to_numeric(out["D&C"], errors="coerce").fillna(0) + pd.to_numeric(out["Teletalk"], errors="coerce").fillna(0)
+    out["Fecha"] = out["_FECHA_VENTA_DT"].dt.strftime("%d/%m/%Y")
+    out = out.sort_values("_FECHA_VENTA_DT")
+    return out[cols]
+
+
+def ranking_movil_por_columna(df, columna, nombre_columna, incluir_total=True):
+    # Ranking móvil. Se retira Operaciones Únicas y se agrega Caída = No Pagadas / Total Ventas.
+    cols = ["Rank", nombre_columna, "Total Ventas", "Pagadas", "No Pagadas", "Caída", "Comision", "% Participación"]
+    if df.empty or columna not in df.columns:
+        return pd.DataFrame(columns=cols)
+    base = df[df["Venta Valida"]].copy()
+    if base.empty:
+        return pd.DataFrame(columns=cols)
+    base[columna] = base[columna].fillna(f"Sin {nombre_columna}").astype(str).str.strip().replace("", f"Sin {nombre_columna}")
+    filas = []
+    for valor, g in base.groupby(columna, dropna=False):
+        total_ventas = int(g["Tipo Operacion"].count())
+        pagadas = int((g["Estado Pago"] == "PAGADA").sum())
+        no_pagadas = int((g["Estado Pago"] == "NO PAGADA").sum())
+        caida = (no_pagadas / total_ventas * 100) if total_ventas > 0 else 0
+        filas.append({
+            nombre_columna: valor,
+            "Total Ventas": total_ventas,
+            "Pagadas": pagadas,
+            "No Pagadas": no_pagadas,
+            "Caída": f"{caida:.2f}%",
+            "Comision": _sumar_comision_real_unica(g),
+        })
+    r = pd.DataFrame(filas).sort_values(["Total Ventas", "Comision"], ascending=[False, False]).reset_index(drop=True)
+    r.insert(0, "Rank", r.index + 1)
+    total = int(r["Total Ventas"].sum()) if not r.empty else 0
+    r["% Participación"] = r["Total Ventas"].apply(lambda x: f"{(x / total * 100):.2f}%" if total > 0 else "0.00%")
+
+    if not incluir_total:
+        return r[cols]
+
+    pagadas_total = int((base["Estado Pago"] == "PAGADA").sum())
+    no_pagadas_total = int((base["Estado Pago"] == "NO PAGADA").sum())
+    caida_total = (no_pagadas_total / total * 100) if total > 0 else 0
+    total_row = pd.DataFrame([{
+        "Rank": "TOTAL",
+        nombre_columna: "",
+        "Total Ventas": total,
+        "Pagadas": pagadas_total,
+        "No Pagadas": no_pagadas_total,
+        "Caída": f"{caida_total:.2f}%",
+        "Comision": _sumar_comision_real_unica(base),
+        "% Participación": "100.00%" if total > 0 else "0.00%"
+    }])
+    return pd.concat([r[cols], total_row[cols]], ignore_index=True)
+
+def mostrar_resumen_general_movil_premium(resumen_general):
+    """Vista más gerencial para Resumen general por canal."""
+    if resumen_general.empty:
+        st.warning("No hay ventas válidas para el filtro seleccionado.")
+        return
+
+    base = resumen_general[resumen_general["Canal"].astype(str).str.upper() != "TOTAL"].copy()
+    total = resumen_general[resumen_general["Canal"].astype(str).str.upper() == "TOTAL"].copy()
+    if total.empty:
+        total_ventas = int(pd.to_numeric(base.get("Total Ventas", 0), errors="coerce").fillna(0).sum())
+        pagadas = int(pd.to_numeric(base.get("Pagadas", 0), errors="coerce").fillna(0).sum())
+        no_pagadas = int(pd.to_numeric(base.get("No Pagadas", 0), errors="coerce").fillna(0).sum())
+        comision = float(pd.to_numeric(base.get("Comision", 0), errors="coerce").fillna(0).sum())
+    else:
+        total_ventas = int(pd.to_numeric(total["Total Ventas"].iloc[0], errors="coerce"))
+        pagadas = int(pd.to_numeric(total["Pagadas"].iloc[0], errors="coerce"))
+        no_pagadas = int(pd.to_numeric(total["No Pagadas"].iloc[0], errors="coerce"))
+        comision = float(pd.to_numeric(total["Comision"].iloc[0], errors="coerce"))
+
+    pct_pago = (pagadas / total_ventas * 100) if total_ventas > 0 else 0
+    pct_caida = (no_pagadas / total_ventas * 100) if total_ventas > 0 else 0
+
+    st.markdown("""
+    <style>
+        .mov-resumen-wrap{
+            background:linear-gradient(135deg, rgba(255,255,255,.98), rgba(245,243,255,.96));
+            border:1px solid rgba(109,11,140,.16);
+            border-radius:24px;
+            padding:20px 22px;
+            box-shadow:0 14px 42px rgba(109,11,140,.12);
+            margin:8px 0 16px 0;
+        }
+        .mov-resumen-title{font-size:28px;font-weight:950;color:#70008f;margin-bottom:4px;}
+        .mov-resumen-sub{font-size:13px;font-weight:700;color:#64748b;}
+        .mov-mini-card{background:white;border-radius:18px;padding:15px 12px;text-align:center;border:1px solid rgba(109,11,140,.12);box-shadow:0 8px 24px rgba(0,0,0,.06);}
+        .mov-mini-label{font-size:10px;font-weight:900;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
+        .mov-mini-value{font-size:24px;font-weight:950;color:#70008f;margin-top:5px;}
+    </style>
+    <div class="mov-resumen-wrap">
+        <div class="mov-resumen-title">📋 Resumen General por Canal</div>
+        <div class="mov-resumen-sub">Lectura ejecutiva de ventas móviles, pago real Claro, caída y comisión por canal.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tabla = resumen_general.copy()
+    if "Comision" in tabla.columns:
+        tabla["Comision"] = pd.to_numeric(tabla["Comision"], errors="coerce").fillna(0).map(formatear_moneda)
+
+    def _resaltar_total_movil(row):
+        if str(row.get("Canal", "")).upper() == "TOTAL":
+            return ["background-color:#70008f;color:white;font-weight:900;text-align:center;" for _ in row]
+        return ["text-align:center;" for _ in row]
+
+    st.dataframe(
+        tabla.style.apply(_resaltar_total_movil, axis=1).set_properties(**{"text-align":"center", "font-size":"13px"}),
+        use_container_width=True,
+        height=210
+    )
+
+    try:
+        import altair as alt
+        chart_base = base.copy()
+        chart_base = chart_base[chart_base["Canal"].astype(str).str.upper() != "TOTAL"].copy()
+        chart_base["Canal Mostrar"] = chart_base["Canal"].replace({"D&C": "Digital", "Teletalk": "Teletalk"})
+        chart_data = chart_base.melt(
+            id_vars=["Canal Mostrar"],
+            value_vars=["Pagadas", "No Pagadas"],
+            var_name="Estado",
+            value_name="Ventas"
+        )
+        chart = (
+            alt.Chart(chart_data)
+            .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
+            .encode(
+                x=alt.X("Canal Mostrar:N", title="Canal", sort=["Digital", "Teletalk"]),
+                y=alt.Y("Ventas:Q", title="Ventas"),
+                xOffset=alt.XOffset("Estado:N", sort=["Pagadas", "No Pagadas"]),
+                color=alt.Color("Estado:N", scale=alt.Scale(domain=["Pagadas", "No Pagadas"], range=["#059669", "#dc2626"]), legend=alt.Legend(title="Estado")),
+                tooltip=["Canal Mostrar", "Estado", "Ventas"]
+            )
+            .properties(height=300, title="Ventas pagadas vs no pagadas por canal")
+            .configure_title(fontSize=18, fontWeight="bold", color="#70008f")
+        )
+        st.altair_chart(chart, use_container_width=True)
+    except Exception:
+        pass
+
+
+def mostrar_ranking_supervisor_movil_expandible(df):
+    """Ranking de supervisor con botón/expander para ver asesores debajo."""
+    r_sup = ranking_movil_por_columna(df, "SUPERVISOR", "SUPERVISOR")
+    if r_sup.empty:
+        st.warning("No se encontraron supervisores.")
+        return
+
+    base = df[df["Venta Valida"]].copy() if not df.empty and "Venta Valida" in df.columns else pd.DataFrame()
+    if base.empty:
+        st.warning("No hay ventas válidas para mostrar.")
+        return
+
+    sup_rows = r_sup[r_sup["Rank"].astype(str).str.upper() != "TOTAL"].copy()
+    total_row = r_sup[r_sup["Rank"].astype(str).str.upper() == "TOTAL"].copy()
+
+    for _, row in sup_rows.iterrows():
+        supervisor = str(row["SUPERVISOR"])
+        titulo = (
+            f"➕ #{row['Rank']} | {supervisor}  |  "
+            f"Ventas: {int(row['Total Ventas']):,}  |  "
+            f"Pagadas: {int(row['Pagadas']):,}  |  "
+            f"No pagadas: {int(row['No Pagadas']):,}  |  "
+            f"Comisión: {formatear_moneda(row['Comision'])}"
+        )
+        with st.expander(titulo, expanded=False):
+            df_sup = base[base["SUPERVISOR"].fillna("Sin Supervisor").astype(str).str.strip().replace("", "Sin Supervisor") == supervisor].copy()
+            r_asesor = ranking_movil_por_columna(df_sup, "ASESOR", "ASESOR", incluir_total=False)
+            if r_asesor.empty:
+                st.info("Este supervisor no tiene asesores para el filtro seleccionado.")
+            else:
+                show = r_asesor.copy()
+                show["Comision"] = pd.to_numeric(show["Comision"], errors="coerce").fillna(0).map(formatear_moneda)
+                st.dataframe(show, use_container_width=True, height=min(420, 90 + 35 * len(show)))
+
+
+
 def mostrar_detalle_movil_general():
     color_titulo = "#70008f"
     color_borde = "#6d0b8c"
@@ -2674,86 +3448,273 @@ def mostrar_detalle_movil_general():
 
     st.markdown(
         f'<div style="color:{color_titulo};font-size:36px;font-weight:900;margin-bottom:4px;">'
-        f'Detalle MÓVIL TELETALK</div>',
+        f'Detalle MÓVIL GENERAL</div>',
         unsafe_allow_html=True
     )
     st.markdown(
         f'<div style="color:{color_titulo};font-weight:800;font-size:16px;margin-bottom:16px;">'
-        f'Cruce real: Base pagados + 2da caída por DNI; 3ra caída filtrada por FEC ACTIV CTR</div>',
+        f'Resumen general por Fecha de Venta usando solo MOVIL_DC.csv y MOVIL_TELETALK.csv</div>',
         unsafe_allow_html=True
     )
     st.write("---")
 
-    meses = obtener_meses_teletalk_movil_caidas()
+    # Para Detalle Móvil General el filtro principal se alimenta SOLO de MOVIL_DC.csv y MOVIL_TELETALK.csv.
+    # No se mezclan meses de caídas/CLARO ni de fija.
+    meses_general = obtener_meses_movil_general()
+    meses = ["Todos los meses"] + sorted(
+        set(meses_general) - {"Todos los meses"},
+        key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))
+    )
 
     st.markdown("### 🔎 Filtros")
-
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2 = st.columns(2)
 
     with c1:
         filtro_mes = st.selectbox("Fecha de Venta", meses, key="movil_fecha_venta")
 
     with c2:
-        filtro_canal = st.selectbox("Canal", ["Todos"], key="movil_canal")
+        filtro_canal = st.selectbox("Canal", ["Todos", "D&C", "Teletalk"], key="movil_canal")
 
+    with st.spinner("Cargando resumen móvil general por Cliente - Tipo De Operacion..."):
+        df_general = construir_resumen_movil_general(filtro_mes)
+        df_caidas_tt = construir_detalle_movil_teletalk_caidas(filtro_mes)
+
+    df_opciones = df_general.copy()
+    if filtro_canal != "Todos" and not df_opciones.empty:
+        df_opciones = df_opciones[df_opciones["Canal"] == filtro_canal].copy()
+
+    c3, c4, c5 = st.columns(3)
     with c3:
-        filtro_pago = st.selectbox("Estado de Pago", ["Todos"], key="movil_estado_pago")
-
+        filtro_pago = st.selectbox("Estado de Pago", ["Todos", "PAGADA", "NO PAGADA"], key="movil_estado_pago")
     with c4:
-        filtro_supervisor = st.selectbox("Supervisor", ["Todos"], key="movil_supervisor")
-
+        supervisores = ["Todos"]
+        if not df_opciones.empty and "SUPERVISOR" in df_opciones.columns:
+            supervisores += sorted(df_opciones["SUPERVISOR"].fillna("Sin Supervisor").astype(str).str.strip().replace("", "Sin Supervisor").unique().tolist())
+        filtro_supervisor = st.selectbox("Supervisor", supervisores, key="movil_supervisor")
     with c5:
-        filtro_tipificacion = st.selectbox("Tipificación", ["Todos"], key="movil_tipificacion")
+        # Filtro Tipificación: SOLO desde MOVIL_DC.csv y MOVIL_TELETALK.csv,
+        # columna Estados - Venta Especificacion. No se mezcla con FIJA ni CLARO.
+        tipificaciones = obtener_tipificaciones_solo_movil_general()
+        filtro_tipificacion = st.selectbox("Tipificación", tipificaciones, key="movil_tipificacion")
 
-    with st.spinner("Cargando base y cruzando TELEFONO contra MSISDN..."):
-        df = construir_detalle_movil_teletalk_caidas(filtro_mes)
-
-    if df.empty:
+    if df_general.empty and df_caidas_tt.empty:
         st.warning(
-            "No se encontraron datos. Verifica que estén estos archivos en la carpeta del app.py: "
-            "CLARO_TELETALK_MOVIL.csv, CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv y "
-            "CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv"
+            "No se encontraron datos. Verifica que existan MOVIL_DC.csv y MOVIL_TELETALK.csv en la carpeta del app.py, "
+            "y que tengan Fecha de Venta, Cliente - Tipo De Operacion, Estados - Venta Especificacion y Datos Adicionales - Supervisor."
         )
         return
 
-    if df["NUMERO_LINEA"].isna().any():
-        st.warning(
-            "Hay filas sin número. La 3ra caída cruza TELEFONO vs MSISDN y se filtra por FEC ACTIV CTR; la 2da caída cruza DNI CLIENTE vs DNI RUC y solo cuenta COMISION > 0."
-        )
+    df_filtrado = df_general.copy()
+    if filtro_canal != "Todos" and not df_filtrado.empty:
+        df_filtrado = df_filtrado[df_filtrado["Canal"] == filtro_canal].copy()
 
-    df_filtrado = df.copy()
+    if filtro_pago != "Todos" and "Estado Pago" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["Estado Pago"] == filtro_pago].copy()
 
-    base_lineas = _lineas_etapa(df_filtrado, "Base Pagados")
-    segunda_lineas = _lineas_etapa(df_filtrado, "2da Caída - 3 meses")
-    tercera_lineas = _lineas_etapa(df_filtrado, "3ra Caída - 6 meses")
-    comision_total = pd.to_numeric(df_filtrado["COMISION"], errors="coerce").fillna(0).sum()
+    if filtro_supervisor != "Todos" and "SUPERVISOR" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["SUPERVISOR"] == filtro_supervisor].copy()
+
+    if filtro_tipificacion != "Todos" and "TIPIS" in df_filtrado.columns:
+        df_filtrado = df_filtrado[
+            df_filtrado["TIPIS"].fillna("Sin Tipificación").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+            == str(filtro_tipificacion).strip()
+        ].copy()
+
+    resumen_general = resumen_general_movil_df(df_filtrado)
+    base_valida = df_filtrado[df_filtrado.get("Venta Valida", False)].copy() if not df_filtrado.empty else pd.DataFrame()
+
+    total_ventas = int(base_valida["Tipo Operacion"].count()) if not base_valida.empty else 0
+    pagadas_total = int((base_valida["Estado Pago"] == "PAGADA").sum()) if not base_valida.empty and "Estado Pago" in base_valida.columns else 0
+    no_pagadas_total = int((base_valida["Estado Pago"] == "NO PAGADA").sum()) if not base_valida.empty and "Estado Pago" in base_valida.columns else 0
+    pct_caida = (no_pagadas_total / total_ventas * 100) if total_ventas > 0 else 0
+
+    if not base_valida.empty:
+        tipo_norm = base_valida["Tipo Operacion"].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper().str.replace("Í", "I", regex=False)
+        portabilidad_total = int(tipo_norm.eq("PORTABILIDAD").sum())
+        alta_total = int(tipo_norm.isin(["ALTA", "ALTA NUEVA"]).sum())
+    else:
+        portabilidad_total = 0
+        alta_total = 0
+    comision_total = _sumar_comision_real_unica(base_valida)
+
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    _kpi_movil_teletalk_card(k1, "Total Ventas", f"{total_ventas:,}", "Ventas registradas", "#111827")
+    _kpi_movil_teletalk_card(k2, "Pagadas", f"{pagadas_total:,}", "COMISION TOTAL > 0", "#059669")
+    _kpi_movil_teletalk_card(k3, "No Pagadas", f"{no_pagadas_total:,}", "COMISION TOTAL = 0", "#dc2626")
+    _kpi_movil_teletalk_card(k4, "% Caída", f"{pct_caida:.2f}%", "No pagadas / Total ventas", "#f97316")
+    _kpi_movil_teletalk_card(k5, "Portabilidad", f"{portabilidad_total:,}", "Cliente - Tipo De Operacion", "#0f4287")
+    _kpi_movil_teletalk_card(k6, "Alta", f"{alta_total:,}", "Cliente - Tipo De Operacion", "#7c3aed")
+    _kpi_movil_teletalk_card(k7, "Comisión", formatear_moneda(comision_total), "Cruce DNI + mes/año", "#0891b2")
+
+    st.write("")
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📋 Detalle Ventas",
+        "📋 Resumen General",
         "📆 Ventas por Día",
         "🏆 Ranking Supervisor",
         "👥 Ranking Asesores",
         "📍 Ranking Departamentos",
-        "📊 Estados Operativos"
+        "📊 Caídas Teletalk"
     ])
 
     with tab1:
-        st.info("Sin contenido por configurar")
+        mostrar_resumen_general_movil_premium(resumen_general)
+
+        if not resumen_general.empty:
+            st.download_button(
+                "⬇️ Descargar Resumen General Móvil",
+                data=resumen_general.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                file_name="resumen_general_movil.csv",
+                mime="text/csv",
+                key="dl_resumen_general_movil",
+                on_click=registrar_descarga,
+                args=("Detalle Móvil General", "resumen_general_movil.csv", f"Fecha Venta: {filtro_mes} | Canal: {filtro_canal}")
+            )
+
+        st.markdown("#### Detalle de ventas")
+        if df_filtrado.empty:
+            st.warning("Sin detalle para mostrar.")
+        else:
+            columnas_detalle = [
+                "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Tipo Operacion",
+                "Estado Pago", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR"
+            ]
+            columnas_detalle = [c for c in columnas_detalle if c in df_filtrado.columns]
+            detalle = df_filtrado[columnas_detalle].copy()
+            st.dataframe(detalle, use_container_width=True, height=420)
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                detalle.to_excel(writer, index=False, sheet_name="Detalle Movil")
+                resumen_general.to_excel(writer, index=False, sheet_name="Resumen")
+            output.seek(0)
+            st.download_button(
+                "⬇️ Descargar Detalle Móvil General en Excel",
+                data=output.getvalue(),
+                file_name="detalle_movil_general.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_detalle_movil_general_excel",
+                on_click=registrar_descarga,
+                args=("Detalle Móvil General", "detalle_movil_general.xlsx", f"Fecha Venta: {filtro_mes} | Canal: {filtro_canal}")
+            )
 
     with tab2:
-        st.info("Sin contenido por configurar")
+        titulo_periodo = "Ventas por mes" if filtro_mes == "Todos los meses" else "Ventas por día"
+        st.markdown(f"#### 📆 {titulo_periodo}")
+
+        base_periodo = df_filtrado.copy()
+        if not base_periodo.empty and "Venta Valida" in base_periodo.columns and "_FECHA_VENTA_DT" in base_periodo.columns:
+            base_periodo = base_periodo[base_periodo["Venta Valida"] & base_periodo["_FECHA_VENTA_DT"].notna()].copy()
+        else:
+            base_periodo = pd.DataFrame()
+
+        if base_periodo.empty:
+            st.warning("No hay fechas válidas para el filtro seleccionado.")
+        else:
+            if filtro_mes == "Todos los meses":
+                base_periodo["Periodo"] = base_periodo["_FECHA_VENTA_DT"].dt.to_period("M").dt.to_timestamp()
+                base_periodo["Periodo Texto"] = base_periodo["Periodo"].apply(lambda x: f"{MESES_ES[int(x.month)]} {int(x.year)}")
+                orden_periodo = base_periodo.drop_duplicates("Periodo").sort_values("Periodo")["Periodo Texto"].tolist()
+                eje_titulo = "Mes"
+                graf_titulo = "Ventas móviles por mes"
+            else:
+                base_periodo["Periodo"] = base_periodo["_FECHA_VENTA_DT"].dt.normalize()
+                base_periodo["Periodo Texto"] = base_periodo["Periodo"].dt.strftime("%d/%m/%Y")
+                orden_periodo = base_periodo.drop_duplicates("Periodo").sort_values("Periodo")["Periodo Texto"].tolist()
+                eje_titulo = "Fecha"
+                graf_titulo = "Ventas móviles por día"
+
+            df_periodo = (
+                base_periodo.groupby(["Periodo", "Periodo Texto", "Canal"], as_index=False)
+                .agg(Ventas=("Tipo Operacion", "count"))
+            )
+            chart_data = df_periodo.copy()
+            try:
+                import altair as alt
+                chart = (
+                    alt.Chart(chart_data)
+                    .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+                    .encode(
+                        x=alt.X("Periodo Texto:N", sort=orden_periodo, title=eje_titulo),
+                        y=alt.Y("Ventas:Q", title="Ventas"),
+                        xOffset="Canal:N",
+                        color=alt.Color("Canal:N", scale=alt.Scale(domain=["D&C", "Teletalk"], range=["#0f4287", "#70008f"])),
+                        tooltip=["Periodo Texto", "Canal", "Ventas"]
+                    )
+                    .properties(height=340, title=graf_titulo)
+                    .configure_title(fontSize=18, fontWeight="bold", color="#111827")
+                )
+                st.altair_chart(chart, use_container_width=True)
+            except Exception:
+                st.info("No se pudo mostrar el gráfico, pero la tabla está disponible.")
+
+            pivot = df_periodo.pivot_table(index=["Periodo", "Periodo Texto"], columns="Canal", values="Ventas", aggfunc="sum", fill_value=0).reset_index()
+            for c in ["D&C", "Teletalk"]:
+                if c not in pivot.columns:
+                    pivot[c] = 0
+            estados = base_periodo.groupby(["Periodo", "Periodo Texto"], as_index=False).agg(
+                Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
+                **{"No Pagadas": ("Estado Pago", lambda x: (x == "NO PAGADA").sum())}
+            )
+            comisiones = []
+            for (periodo, periodo_txt), g in base_periodo.groupby(["Periodo", "Periodo Texto"]):
+                comisiones.append({"Periodo": periodo, "Periodo Texto": periodo_txt, "Comision": _sumar_comision_real_unica(g)})
+            com = pd.DataFrame(comisiones)
+            tabla_periodo = pivot.merge(estados, on=["Periodo", "Periodo Texto"], how="left").merge(com, on=["Periodo", "Periodo Texto"], how="left")
+            tabla_periodo["Total Ventas"] = pd.to_numeric(tabla_periodo["D&C"], errors="coerce").fillna(0) + pd.to_numeric(tabla_periodo["Teletalk"], errors="coerce").fillna(0)
+            tabla_periodo = tabla_periodo.sort_values("Periodo")[["Periodo Texto", "D&C", "Teletalk", "Total Ventas", "Pagadas", "No Pagadas", "Comision"]]
+            tabla_periodo = tabla_periodo.rename(columns={"Periodo Texto": eje_titulo})
+            tabla_show = tabla_periodo.copy()
+            tabla_show["Comision"] = pd.to_numeric(tabla_show["Comision"], errors="coerce").fillna(0).map(formatear_moneda)
+            total_row = pd.DataFrame([{
+                eje_titulo: "TOTAL",
+                "D&C": int(tabla_periodo["D&C"].sum()),
+                "Teletalk": int(tabla_periodo["Teletalk"].sum()),
+                "Total Ventas": int(tabla_periodo["Total Ventas"].sum()),
+                "Pagadas": int(tabla_periodo["Pagadas"].sum()),
+                "No Pagadas": int(tabla_periodo["No Pagadas"].sum()),
+                "Comision": formatear_moneda(pd.to_numeric(tabla_periodo["Comision"], errors="coerce").fillna(0).sum())
+            }])
+            st.dataframe(pd.concat([tabla_show, total_row], ignore_index=True), use_container_width=True, height=420)
 
     with tab3:
-        st.info("Sin contenido por configurar")
+        st.markdown("#### 🏆 Ranking Supervisor")
+        mostrar_ranking_supervisor_movil_expandible(df_filtrado)
 
     with tab4:
-        st.info("Sin contenido por configurar")
+        st.markdown("#### 👥 Ranking Asesores")
+        r_ase = ranking_movil_por_columna(df_filtrado, "ASESOR", "ASESOR")
+        if r_ase.empty:
+            st.warning("No se encontraron asesores.")
+        else:
+            show = r_ase.copy()
+            show["Comision"] = show["Comision"].map(formatear_moneda)
+            st.dataframe(show, use_container_width=True, height=460)
 
     with tab5:
-        st.info("Sin contenido por configurar")
+        st.markdown("#### 📍 Ranking Departamentos")
+        r_dep = ranking_movil_por_columna(df_filtrado, "Departamento", "Departamento")
+        if r_dep.empty:
+            st.warning("No se encontraron departamentos.")
+        else:
+            show = r_dep.copy()
+            show["Comision"] = show["Comision"].map(formatear_moneda)
+            st.dataframe(show, use_container_width=True, height=460)
 
     with tab6:
-        st.info("Sin contenido por configurar")
+        st.markdown("#### 📊 Caídas Teletalk")
+        if df_caidas_tt.empty:
+            st.info("No se encontró información de caídas Teletalk para el filtro seleccionado.")
+        else:
+            resumen_tt = _resumen_etapas_teletalk(df_caidas_tt)
+            tabla_tt = resumen_tt.copy()
+            tabla_tt["Comision"] = tabla_tt["Comision"].map(formatear_moneda)
+            st.dataframe(tabla_tt, use_container_width=True, height=210)
+            try:
+                _grafico_resumen_etapa_gerencial(resumen_tt)
+            except Exception:
+                pass
+            mostrar_resumen_etapas_expandible_teletalk(df_caidas_tt, resumen_tt, filtro_mes)
 
 # =========================================================
 # 10B. LOGIN / SEGURIDAD DE ACCESO
