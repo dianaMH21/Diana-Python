@@ -3062,7 +3062,7 @@ def mostrar_detalle_fija_general():
 # - El universo SIEMPRE es la BASE CLARO_TELETALK_MOVIL.csv.
 # - Base Pagados se cuenta desde CLARO_TELETALK_MOVIL.csv.
 # - 2da caída = clientes de la BASE cuyo DNI CLIENTE cruza con DNI RUC de CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv y COMISION > 0.
-# - 3ra caída = filas de la BASE cuyo TELEFONO aparece en MSISDN de tercera caída.
+# - 3ra caída = clientes de la BASE cuyo DNI CLIENTE cruza con DNI RUC de CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv y COMISION > 0.
 # - Fecha de Venta:
 #   * Base Pagados y 2da Caída se filtran con la fecha de la BASE CLARO_TELETALK_MOVIL.csv.
 #   * 3ra Caída se filtra con FEC ACTIV CTR del archivo CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv.
@@ -3268,7 +3268,9 @@ def construir_detalle_movil_teletalk_caidas(filtro_mes="Todos los meses"):
     # 2da Caída: cruza DNI CLIENTE de CLARO_TELETALK_MOVIL.csv
     #             contra DNI RUC de CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv
     #             y SOLO cuenta cuando COMISION > 0
-    # 3ra Caída: se mantiene por TELEFONO de base contra MSISDN de tercera caída
+    # 3ra Caída: cruza DNI CLIENTE de CLARO_TELETALK_MOVIL.csv
+    #             contra DNI RUC de CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv
+    #             y SOLO cuenta cuando COMISION > 0
     df_base_raw = cargar_csv("CLARO_TELETALK_MOVIL.csv")
     df_segunda_raw = cargar_csv("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
 
@@ -3319,7 +3321,6 @@ def construir_detalle_movil_teletalk_caidas(filtro_mes="Todos los meses"):
     base_filtrada["_DNI_CLIENTE_CRUCE"] = base_filtrada["_DNI_CLIENTE_CRUCE"].astype(str)
 
     docs_segunda = set(df_segunda_comision["_DNI_CLIENTE_CRUCE"].dropna().astype(str).tolist()) if not df_segunda_comision.empty else set()
-    nums_tercera = set(tercera_filtrada["NUMERO_LINEA"].dropna().astype(str).tolist()) if not tercera_filtrada.empty else set()
 
     base_out = base_filtrada.copy()
     base_out["Etapa"] = "Base Pagados"
@@ -3350,10 +3351,52 @@ def construir_detalle_movil_teletalk_caidas(filtro_mes="Todos los meses"):
     segunda_out["Coincide Base"] = "SI"
     segunda_out["Criterio Cruce"] = f"{col_doc_base or 'DNI CLIENTE'} vs {col_doc_segunda or 'DNI RUC'} | comisión tomada de CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA"
 
-    # ✅ 3ra caída: se toma el universo de la BASE, pero el mes se controla con FEC ACTIV CTR
-    # del archivo CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv. Así el filtro Fecha de Venta
-    # sí jala para la tercera caída aunque la fecha de la base sea diferente.
-    tercera_out = base[base["NUMERO_LINEA"].astype(str).isin(nums_tercera)].copy()
+    # ✅ 3ra caída: se calcula con la misma lógica que 2da caída, pero usando
+    # CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv y su filtro de mes por FEC ACTIV CTR.
+    df_tercera_raw = cargar_csv("CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv")
+
+    col_comision_tercera = encontrar_columna(df_tercera_raw, [
+        "COMISION", "COMISIÓN", "Comision", "Comisión", "comision", "comisión",
+        "COMISION TOTAL", "COMISIÓN TOTAL", "Comision Total", "MONTO"
+    ]) if not df_tercera_raw.empty else None
+
+    if not df_tercera_raw.empty and col_comision_tercera:
+        comision_tercera = pd.to_numeric(df_tercera_raw[col_comision_tercera], errors="coerce").fillna(0)
+        df_tercera_raw = df_tercera_raw[comision_tercera > 0].copy()
+    elif not df_tercera_raw.empty:
+        df_tercera_raw = df_tercera_raw.iloc[0:0].copy()
+
+    doc_tercera, col_doc_tercera = _obtener_documento_por_columnas(df_tercera_raw, ["DNI RUC"]) if not df_tercera_raw.empty else (pd.Series(dtype="object"), "")
+
+    if not df_tercera_raw.empty and col_comision_tercera and len(doc_tercera) > 0:
+        df_tercera_comision = pd.DataFrame({
+            "_DNI_CLIENTE_CRUCE": doc_tercera,
+            "_COMISION_ADICIONAL_3RA": pd.to_numeric(df_tercera_raw[col_comision_tercera], errors="coerce").fillna(0)
+        })
+        df_tercera_comision = df_tercera_comision.dropna(subset=["_DNI_CLIENTE_CRUCE"])
+        df_tercera_comision["_DNI_CLIENTE_CRUCE"] = df_tercera_comision["_DNI_CLIENTE_CRUCE"].astype(str)
+        df_tercera_comision = (
+            df_tercera_comision
+            .groupby("_DNI_CLIENTE_CRUCE", as_index=False)["_COMISION_ADICIONAL_3RA"]
+            .sum()
+        )
+    else:
+        df_tercera_comision = pd.DataFrame(columns=["_DNI_CLIENTE_CRUCE", "_COMISION_ADICIONAL_3RA"])
+
+    docs_tercera = set(df_tercera_comision["_DNI_CLIENTE_CRUCE"].dropna().astype(str).tolist()) if not df_tercera_comision.empty else set()
+    tercera_out = base_filtrada[base_filtrada["_DNI_CLIENTE_CRUCE"].astype(str).isin(docs_tercera)].copy()
+
+    if not tercera_out.empty:
+        tercera_out = tercera_out.merge(df_tercera_comision, on="_DNI_CLIENTE_CRUCE", how="left")
+        tercera_out["_COMISION_ADICIONAL_3RA"] = pd.to_numeric(
+            tercera_out["_COMISION_ADICIONAL_3RA"], errors="coerce"
+        ).fillna(0)
+        tercera_out["_ORDEN_DNI_3RA"] = tercera_out.groupby("_DNI_CLIENTE_CRUCE").cumcount()
+        tercera_out["COMISION"] = tercera_out.apply(
+            lambda r: r["_COMISION_ADICIONAL_3RA"] if r["_ORDEN_DNI_3RA"] == 0 else 0,
+            axis=1
+        )
+        tercera_out["COMISION ADICIONAL 3RA"] = tercera_out["COMISION"]
 
     if not tercera_out.empty and not tercera_filtrada.empty:
         fechas_tercera = (
@@ -3379,10 +3422,10 @@ def construir_detalle_movil_teletalk_caidas(filtro_mes="Todos los meses"):
 
     tercera_out["Etapa"] = "3ra Caída - 6 meses"
     tercera_out["Orden"] = 3
-    tercera_out["Descripción"] = "Línea de la base que aparece en MSISDN de 3ra caída filtrada por FEC ACTIV CTR"
+    tercera_out["Descripción"] = "Cliente de la base cuyo DNI CLIENTE cruza con DNI RUC de 3ra caída y COMISION > 0"
     tercera_out["Archivo"] = "CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv"
     tercera_out["Coincide Base"] = "SI"
-    tercera_out["Criterio Cruce"] = "TELEFONO vs MSISDN | Fecha de Venta = FEC ACTIV CTR"
+    tercera_out["Criterio Cruce"] = f"{col_doc_base or 'DNI CLIENTE'} vs {col_doc_tercera or 'DNI RUC'} | comisión tomada de CLARO_TELETALK_MOVIL_TERCERA_CAIDA"
 
     df_all = pd.concat([base_out, segunda_out, tercera_out], ignore_index=True)
 
@@ -5217,6 +5260,7 @@ def mostrar_detalle_movil_general():
                                  (_pag_plan,"Pagado"), (_nopag_plan,"No Pagadas")]:
                 _pivot = _pivot.merge(_df_m, on="_PLAN", how="left")
             _pivot = _pivot.rename(columns={"_PLAN":"Plan"})
+            _pivot = _pivot[_pivot["Plan"] != "Sin Plan"].copy()
             for _c in ["PORTABILIDAD","LINEA NUEVA","Pagado","No Pagadas"]:
                 if _c not in _pivot.columns:
                     _pivot[_c] = 0
