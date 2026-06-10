@@ -5761,12 +5761,10 @@ def login_inicio():
 
     USUARIOS = {
         "Fiorella": "F10r3LLa123*",
-        "JoselynC": "Corp.JC_2026!k",
         "LuisT": "Corp.LT_2026!k",
-        "Isabel": "Corp.I_2026!k",
+        "PaoloA": "Corp.PA_2026!k",
         "DavidG": "Corp.DG_2026!k",
         "SusanG": "Corp.SG_2026!k",
-        "JoseM": "Corp.JM_2026!k"
     }
 
     usuario = st.selectbox(
