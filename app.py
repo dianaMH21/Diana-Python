@@ -1202,6 +1202,44 @@ def cargar_csv(nombre):
 def get_tabla(nombre):
     return cargar_csv(CSV_MAP.get(nombre, nombre.split(".")[-1] + ".csv"))
 
+# =========================================================
+# DOTACIÓN — cruce para columna COLA
+# =========================================================
+@st.cache_data(ttl=600)
+def cargar_dotacion():
+    """
+    Carga DOTACION.csv y retorna un dict {USUARIO_NORM: SEGMENTO}.
+    La columna de usuario en DOTACION se llama USUARIO.
+    El segmento (COLA) viene de la columna SEGMENTO.
+    Los valores se normalizan a str.upper().strip() para el cruce.
+    """
+    df = cargar_csv("DOTACION.csv")
+    if df.empty:
+        return {}
+    col_usuario = next((c for c in df.columns if c.strip().upper() == "USUARIO"), None)
+    col_segmento = next((c for c in df.columns if c.strip().upper() == "SEGMENTO"), None)
+    if not col_usuario or not col_segmento:
+        return {}
+    df = df.copy()
+    # Normaliza la clave: quita sufijo ".0" (cuando pandas lee la extensión como float) y espacios.
+    df["_KEY"] = df[col_usuario].fillna("").astype(str).str.upper().str.strip().str.replace(r"\.0$", "", regex=True)
+    df["_SEG"] = df[col_segmento].fillna("EXTERNO").astype(str).str.strip()
+    df = df[df["_KEY"] != ""]
+    return dict(zip(df["_KEY"], df["_SEG"]))
+
+def _agregar_cola_por_extension(df, col_extension):
+    """
+    Dado un DataFrame y la columna que contiene la extensión/usuario del asesor,
+    retorna una Serie con la COLA (SEGMENTO de DOTACION).
+    Los que no cruzan quedan como 'EXTERNO'.
+    """
+    dotacion_map = cargar_dotacion()
+    if not dotacion_map or col_extension not in df.columns:
+        return pd.Series(["EXTERNO"] * len(df), index=df.index)
+    # Misma normalización que la clave de DOTACION para que el BUSCARV cruce bien.
+    keys = df[col_extension].fillna("").astype(str).str.upper().str.strip().str.replace(r"\.0$", "", regex=True)
+    return keys.map(dotacion_map).fillna("EXTERNO")
+
 def preparar_fechas_fija(df):
     for col in ["FECHA INSTALACION", "FECHA GENERACION", "FECHA DE VENTA"]:
         if col in df.columns:
@@ -1729,7 +1767,7 @@ def _base_claro_pago(tabla_ventas):
 @st.cache_data(ttl=600)
 def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes, filtro_fecha_venta="Todos los meses"):
     cols_salida = ["Canal","SOT","Documento","SUPERVISOR","ASESOR","Nombre del Cliente","Departamento",
-                   "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago"]
+                   "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago","COLA"]
     try:
         df_m = get_tabla(tabla_maestro)
         if df_m.empty: return pd.DataFrame(columns=cols_salida)
@@ -1775,6 +1813,13 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
         df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION"] > 0), "Estado Pago"] = "PAGADA"
         df["FECHA INSTALACION"] = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
         df["FECHA DE VENTA"] = df["_FECHA_VENTA_DT"].dt.strftime("%d/%m/%Y").fillna("")
+        # ── COLA: cruce con DOTACION por extensión del usuario ─────────────
+        # BUSCARV: EXTENSION DEL USUARIO (Excel datos)  ->  USUARIO (DOTACION)  ->  SEGMENTO
+        col_ext = encontrar_columna(df_m, ["EXTENSION DEL USUARIO","EXTENSIÓN DEL USUARIO","Extension del usuario","EXTENSION","Extension"])
+        if col_ext:
+            df["COLA"] = _agregar_cola_por_extension(df_m.reindex(df.index), col_ext)
+        else:
+            df["COLA"] = "EXTERNO"
         for col in cols_salida:
             if col not in df.columns: df[col] = ""
         return df[cols_salida].reset_index(drop=True)
@@ -2898,10 +2943,13 @@ def mostrar_detalle_fija_general():
     with col_f3: filtro_canal       = st.selectbox("Canal",          ["Todos","D&C","Teletalk"], key="det_general_canal")
     with col_f4: filtro_estado      = st.selectbox("Estado de Pago", ["Todos","PAGADA","CAÍDA"], key="det_general_estado")
 
-    col_f5,col_f6,col_f7 = st.columns([1.4,1.6,0.7])
+    col_f5,col_f6,col_f7,col_f8 = st.columns([1.3,1.4,1.1,0.7])
     with col_f5: filtro_supervisor   = st.multiselect("Supervisor", sorted(df_det["SUPERVISOR"].fillna("Sin Supervisor").unique().tolist()), default=[], placeholder="Todos los supervisores", key="det_general_supervisor")
     with col_f6: filtro_tipificacion = st.selectbox("Tipificacion", ["Todos"] + sorted(df_det["TIPIS"].fillna("Sin TIPIS").astype(str).unique().tolist()), key="det_general_tipificacion")
     with col_f7:
+        colas_disponibles = sorted(df_det["COLA"].fillna("EXTERNO").unique().tolist()) if "COLA" in df_det.columns else []
+        filtro_cola = st.selectbox("Cola", ["Todos"] + colas_disponibles, key="det_general_cola")
+    with col_f8:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Refrescar datos", key="dfg_refresh", help="Fuerza recarga desde los CSV"):
             del st.session_state["dfg_det_cache"]; st.rerun()
@@ -2914,16 +2962,20 @@ def mostrar_detalle_fija_general():
     if filtro_estado  != "Todos": df_filtrado = df_filtrado[df_filtrado["Estado Pago"] == filtro_estado]
     if filtro_supervisor:          df_filtrado = df_filtrado[df_filtrado["SUPERVISOR"].isin(filtro_supervisor)]
     if filtro_tipificacion != "Todos": df_filtrado = df_filtrado[df_filtrado["TIPIS"]  == filtro_tipificacion]
+    if filtro_cola != "Todos" and "COLA" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["COLA"] == filtro_cola]
     df_filtrado = df_filtrado.copy()
 
     total, pagadas, caidas, comision, pct = kpi_detalle_fija(df_filtrado)
+    ticket_promedio_fija = (comision / pagadas) if pagadas > 0 else 0.0
     st.markdown("### Resumen General")
-    k1,k2,k3,k4,k5 = st.columns(5)
+    k1,k2,k3,k4,k5,k6 = st.columns(6)
     _kpi_card_html(k1,"Total Ventas",  f"{total:,}",          "Base DEVELZ",   color_borde, color_borde)
     _kpi_card_html(k2,"Pagadas",       f"{pagadas:,}",         "Cruza con Claro","#059669","#059669")
     _kpi_card_html(k3,"Caídas",        f"{caidas:,}",          "Sin pago / sin SOT","#dc2626","#dc2626")
     _kpi_card_html(k4,"% Efectividad", f"{pct:.2f}%",          "Pagadas / Total",color_borde,"#059669" if pct>=75 else "#d97706")
     _kpi_card_html(k5,"Comisión Total",formatear_moneda(comision),"Pagada",     color_borde, color_borde)
+    _kpi_card_html(k6,"Ticket Promedio",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
     st.write("---")
 
     tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📋 Detalle Ventas","📆 Ventas por Día","🏆 Ranking Supervisor","👥 Ranking Asesores","📍 Ranking Departamentos","📊 Estados Operativos","📦 Por Planes"])
@@ -2935,7 +2987,7 @@ def mostrar_detalle_fija_general():
             if val == "CAÍDA":  return "background-color:#fee2e2;color:#991b1b;font-weight:700"
             return ""
         cols_mostrar = ["Canal","SOT","Documento","SUPERVISOR","ASESOR","Nombre del Cliente","Departamento",
-                        "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago"]
+                        "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago","COLA"]
         for col in cols_mostrar:
             if col not in df_filtrado.columns: df_filtrado[col] = ""
         df_show = df_filtrado[cols_mostrar].copy()
@@ -4119,15 +4171,19 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses"):
             # Un solo registro comercial por Canal + DNI para que MOVIL no infle ventas.
             df = df.sort_values("_FECHA_VENTA_MOVIL_DT", ascending=False, na_position="last")
             df = df.drop_duplicates(subset=["Canal", "DOCUMENTO_KEY"], keep="first")
+            # Cruce DOTACION para COLA por extensión del usuario
+            # BUSCARV: EXTENSION DEL USUARIO (Excel datos)  ->  USUARIO (DOTACION)  ->  SEGMENTO
+            col_ext_movil = encontrar_columna(df, ["EXTENSION DEL USUARIO","EXTENSIÓN DEL USUARIO","Extension del usuario","EXTENSION","Extension"])
+            df["COLA"] = _agregar_cola_por_extension(df, col_ext_movil) if col_ext_movil else "EXTERNO"
             bases_movil.append(df[[
                 "Canal", "DOCUMENTO_KEY", "Documento", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR",
-                "Departamento", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
+                "Departamento", "COLA", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
             ]])
 
     columnas_salida = [
         "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
         "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
-        "ASESOR", "Departamento", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+        "ASESOR", "Departamento", "COLA", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
         "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
     ]
 
@@ -4175,10 +4231,12 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses"):
         sin_claro["Columna Fecha"] = "FECHA OPERACION CLARO"
         sin_claro["Columna Tipo Operacion"] = "TRANSACCION CLARO"
         sin_claro["Columna Documento"] = sin_claro.get("Columna Documento Movil", "Cliente - Documento")
+        if "COLA" not in sin_claro.columns:
+            sin_claro["COLA"] = "EXTERNO"
         extra = sin_claro[[
             "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
             "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
-            "ASESOR", "Departamento", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+            "ASESOR", "Departamento", "COLA", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
             "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
         ]]
         df_all = pd.concat([df_all, extra], ignore_index=True) if not df_all.empty else extra.copy()
@@ -4994,7 +5052,7 @@ def mostrar_detalle_movil_general():
     if sel_canal and not df_opciones.empty:
         df_opciones = df_opciones[df_opciones["Canal"].isin(sel_canal)].copy()
 
-    c3, c4, c5 = st.columns(3)
+    c3, c4, c5, c6 = st.columns(4)
     with c3:
         sel_pago = st.multiselect("Estado de Pago", ["PAGADA", "NO PAGADA"], default=[], key="movil_estado_pago", placeholder="Todos los estados")
     with c4:
@@ -5005,6 +5063,11 @@ def mostrar_detalle_movil_general():
     with c5:
         tipificaciones_lista = [t for t in obtener_tipificaciones_solo_movil_general() if t != "Todos"]
         sel_tipificacion = st.multiselect("Tipificación", tipificaciones_lista, default=[], key="movil_tipificacion", placeholder="Todas las tipificaciones")
+    with c6:
+        colas_movil = ["EXTERNO"]
+        if not df_opciones.empty and "COLA" in df_opciones.columns:
+            colas_movil = sorted(df_opciones["COLA"].fillna("EXTERNO").astype(str).unique().tolist())
+        sel_cola = st.selectbox("Cola", ["Todos"] + colas_movil, key="movil_cola")
 
     if df_general.empty and df_caidas_tt.empty:
         st.warning(
@@ -5027,31 +5090,69 @@ def mostrar_detalle_movil_general():
         tipis_norm = df_filtrado["TIPIS"].fillna("Sin Tipificación").astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
         df_filtrado = df_filtrado[tipis_norm.isin([str(t).strip() for t in sel_tipificacion])].copy()
 
+    if sel_cola != "Todos" and "COLA" in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado["COLA"].fillna("EXTERNO") == sel_cola].copy()
+
     resumen_general = resumen_general_movil_df(df_filtrado)
     base_valida = df_filtrado[df_filtrado.get("Venta Valida", False)].copy() if not df_filtrado.empty else pd.DataFrame()
 
-    total_ventas = int(base_valida["Tipo Operacion"].count()) if not base_valida.empty else 0
+    # ── KPI Total Ventas: leer directo de MOVIL_DC + MOVIL_TELETALK excluyendo productos no comerciales ──
+    _PRODUCTOS_EXCLUIR = [
+        "CHIP PREPAGO", "PRE A PRE", "2 PLAY 800 MBPS",
+        "IFI INTERNET INALAMBRICO", "TFI", "OLO INTERNET PORTATIL"
+    ]
+    _dfs_kpi = []
+    for _canal_kpi, _archivo_kpi in [("D&C", "MOVIL_DC.csv"), ("Teletalk", "MOVIL_TELETALK.csv")]:
+        if sel_canal and _canal_kpi not in sel_canal:
+            continue
+        _df_kpi, _ = _leer_csv_movil_con_fallback([_archivo_kpi])
+        if _df_kpi.empty:
+            continue
+        if filtro_mes != ["Todos los meses"]:
+            _fecha_kpi, _ = _obtener_fecha_venta_movil_general(_df_kpi)
+            _df_kpi["_FECHA_KPI_DT"] = _fecha_kpi
+            _mask_mes = pd.Series([False] * len(_df_kpi), index=_df_kpi.index)
+            for _mes_str in filtro_mes:
+                _m, _y = parse_mes_anio(_mes_str)
+                if _m and _y:
+                    _mask_mes |= ((_df_kpi["_FECHA_KPI_DT"].dt.month == _m) & (_df_kpi["_FECHA_KPI_DT"].dt.year == _y))
+            _df_kpi = _df_kpi[_mask_mes].copy()
+        _col_prod_kpi = encontrar_columna_flexible(_df_kpi, [
+            "Productos - producto Especificacion", "Productos - Producto Especificacion",
+            "PRODUCTOS - PRODUCTO ESPECIFICACION", "Producto Especificacion",
+            "PRODUCTO ESPECIFICACION", "Producto", "PRODUCTO", "Plan", "PLAN"
+        ])
+        if _col_prod_kpi:
+            _prod_norm = _df_kpi[_col_prod_kpi].fillna("").astype(str).str.strip().str.upper()
+            _df_kpi = _df_kpi[~_prod_norm.isin([p.upper() for p in _PRODUCTOS_EXCLUIR])].copy()
+        _dfs_kpi.append(_df_kpi)
+    total_ventas = int(sum(len(d) for d in _dfs_kpi))
+
     pagadas_total = int((base_valida["Estado Pago"] == "PAGADA").sum()) if not base_valida.empty and "Estado Pago" in base_valida.columns else 0
-    no_pagadas_total = int((base_valida["Estado Pago"] == "NO PAGADA").sum()) if not base_valida.empty and "Estado Pago" in base_valida.columns else 0
+    no_pagadas_total = total_ventas - pagadas_total
     pct_caida = (no_pagadas_total / total_ventas * 100) if total_ventas > 0 else 0
 
-    if not base_valida.empty:
-        tipo_norm = base_valida["Tipo Operacion"].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper().str.replace("Í", "I", regex=False)
+    # Portabilidad y Alta se cuentan SOLO sobre las pagadas para que Alta + Portabilidad = Pagadas.
+    base_pagada = base_valida[base_valida["Estado Pago"] == "PAGADA"] if not base_valida.empty and "Estado Pago" in base_valida.columns else pd.DataFrame()
+    if not base_pagada.empty:
+        tipo_norm = base_pagada["Tipo Operacion"].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper().str.replace("Í", "I", regex=False)
         portabilidad_total = int(tipo_norm.eq("PORTABILIDAD").sum())
         alta_total = int(tipo_norm.isin(["ALTA", "ALTA NUEVA"]).sum())
     else:
         portabilidad_total = 0
         alta_total = 0
     comision_total = _sumar_comision_real_unica(base_valida)
+    ticket_promedio_movil = (comision_total / pagadas_total) if pagadas_total > 0 else 0.0
 
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    k1, k2, k3, k4, k5, k6, k7, k8 = st.columns(8)
     _kpi_movil_teletalk_card(k1, "Total Ventas", f"{total_ventas:,}", "Ventas registradas", "#111827")
     _kpi_movil_teletalk_card(k2, "Pagadas", f"{pagadas_total:,}", "COMISION TOTAL > 0", "#059669")
-    _kpi_movil_teletalk_card(k3, "No Pagadas", f"{no_pagadas_total:,}", "COMISION TOTAL = 0", "#dc2626")
+    _kpi_movil_teletalk_card(k3, "No Pagadas", f"{no_pagadas_total:,}", "Total Ventas - Pagadas", "#dc2626")
     _kpi_movil_teletalk_card(k4, "% Caída", f"{pct_caida:.2f}%", "No pagadas / Total ventas", "#f97316")
-    _kpi_movil_teletalk_card(k5, "Portabilidad", f"{portabilidad_total:,}", "Cliente - Tipo De Operacion", "#0f4287")
-    _kpi_movil_teletalk_card(k6, "Alta", f"{alta_total:,}", "Cliente - Tipo De Operacion", "#7c3aed")
+    _kpi_movil_teletalk_card(k5, "Portabilidad", f"{portabilidad_total:,}", "Pagadas · Portabilidad", "#0f4287")
+    _kpi_movil_teletalk_card(k6, "Alta", f"{alta_total:,}", "Pagadas · Alta", "#7c3aed")
     _kpi_movil_teletalk_card(k7, "Comisión", formatear_moneda(comision_total), "Cruce DNI + mes/año", "#0891b2")
+    _kpi_movil_teletalk_card(k8, "Ticket Promedio", formatear_moneda(ticket_promedio_movil), "Comisión / Pagadas", "#0891b2")
 
     st.write("")
 
@@ -5085,7 +5186,7 @@ def mostrar_detalle_movil_general():
         else:
             columnas_detalle = [
                 "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Tipo Operacion",
-                "Estado Pago", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR"
+                "Estado Pago", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
             ]
             columnas_detalle = [c for c in columnas_detalle if c in df_filtrado.columns]
             detalle = df_filtrado[columnas_detalle].copy()
@@ -5215,7 +5316,7 @@ def mostrar_detalle_movil_general():
                 _grafico_resumen_etapa_gerencial(resumen_tt)
             except Exception:
                 pass
-            mostrar_resumen_etapas_expandible_teletalk(df_caidas_tt, resumen_tt, filtro_mes)
+            mostrar_resumen_etapas_expandible_teletalk(df_caidas_tt, resumen_tt, ", ".join(filtro_mes) if len(filtro_mes) > 1 else filtro_mes[0])
 
     with tab7:
         st.markdown("#### 📦 Planes más vendidos por Modalidad")
