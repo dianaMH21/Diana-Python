@@ -3995,11 +3995,23 @@ def encontrar_columna_flexible(df, posibles):
 def _parse_fecha_movil_robusta(serie):
     if serie is None: return pd.Series(pd.NaT)
     s = serie.copy()
-    # Si viene como serial Excel numérico
-    num = pd.to_numeric(s, errors="coerce")
+    s_str = s.astype(str).str.strip()
+
+    # Formato ISO "YYYY-MM-DD" (o con hora) -> NO usar dayfirst (evita que pandas
+    # intercambie día/mes, p.ej. "2026-06-10" mal interpretado como 06-Oct-2026).
+    es_iso = s_str.str.match(r"^\d{4}-\d{1,2}-\d{1,2}", na=False)
+    fechas_iso = pd.to_datetime(s_str.where(es_iso), errors="coerce", dayfirst=False)
+
+    # Formato "DD/MM/YYYY" u otros con separador '/' -> usar dayfirst.
+    fechas_txt = pd.to_datetime(s_str.where(~es_iso), errors="coerce", dayfirst=True)
+
+    # Fallback numérico (serial Excel) SOLO si el valor es puramente numérico
+    # (evita que textos no-fecha o vacíos se conviertan en fechas seriales erróneas).
+    es_num_puro = s_str.str.match(r"^\d+(\.\d+)?$", na=False)
+    num = pd.to_numeric(s_str.where(es_num_puro), errors="coerce")
     fechas_num = pd.to_datetime(num, unit="D", origin="1899-12-30", errors="coerce")
-    fechas_txt = pd.to_datetime(s.astype(str).str.strip(), errors="coerce", dayfirst=True)
-    fechas = fechas_txt.fillna(fechas_num)
+
+    fechas = fechas_iso.fillna(fechas_txt).fillna(fechas_num)
     return fechas
 
 def _obtener_fecha_venta_movil_general(df):
@@ -4240,6 +4252,13 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses"):
         df["DOCUMENTO_KEY"] = documento
         df["Documento"] = documento
         df["_FECHA_VENTA_MOVIL_DT"] = fecha_dt
+        col_fecha_inst = None
+        for c in df.columns:
+            norm = _normalizar_nombre_columna_movil(c)
+            if norm in ("BACK OFFICE FECHA INSTALACION", "FECHA INSTALACION"):
+                col_fecha_inst = c
+                break
+        df["_FECHA_INSTALACION_DT"] = _parse_fecha_movil_robusta(df[col_fecha_inst]) if col_fecha_inst else pd.Series(pd.NaT, index=df.index)
         df["Cliente"] = _obtener_cliente_movil_teletalk(df)
         df["ASESOR"] = _obtener_campo_movil_seguro(df, [
             "USUARIO", "ASESOR", "VENDEDOR", "DISTRIBUIDOR", "EJECUTIVO", "CREADOR", "Usuario", "Asesor"
@@ -4282,13 +4301,13 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses"):
             df["COLA"] = _agregar_cola_por_extension(df, col_ext_movil) if col_ext_movil else "EXTERNO"
             bases_movil.append(df[[
                 "Canal", "DOCUMENTO_KEY", "Documento", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR",
-                "Departamento", "COLA", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
+                "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
             ]])
 
     columnas_salida = [
         "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
         "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
-        "ASESOR", "Departamento", "COLA", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+        "ASESOR", "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
         "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
     ]
 
@@ -4341,7 +4360,7 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses"):
         extra = sin_claro[[
             "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
             "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
-            "ASESOR", "Departamento", "COLA", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+            "ASESOR", "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
             "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
         ]]
         df_all = pd.concat([df_all, extra], ignore_index=True) if not df_all.empty else extra.copy()
@@ -5153,7 +5172,7 @@ def mostrar_detalle_movil_general():
     )
 
     st.markdown("### 🔎 Filtros")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
 
     with c1:
         filtro_mes_list = st.multiselect("Fecha de Venta", meses[1:], default=[], key="movil_fecha_venta", placeholder="Todos los meses")
@@ -5176,18 +5195,26 @@ def mostrar_detalle_movil_general():
     if sel_canal and not df_opciones.empty:
         df_opciones = df_opciones[df_opciones["Canal"].isin(sel_canal)].copy()
 
-    c3, c4, c5, c6 = st.columns(4)
     with c3:
-        sel_pago = st.multiselect("Estado de Pago", ["PAGADA", "NO PAGADA"], default=[], key="movil_estado_pago", placeholder="Todos los estados")
+        meses_instalacion = []
+        if not df_opciones.empty and "_FECHA_INSTALACION_DT" in df_opciones.columns:
+            fechas_inst = pd.to_datetime(df_opciones["_FECHA_INSTALACION_DT"], errors="coerce").dropna()
+            meses_set = {f"{MESES_ES[f.month].capitalize()} {f.year}" for f in fechas_inst}
+            meses_instalacion = sorted(meses_set, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)))
+        sel_fecha_instalacion = st.multiselect("Fecha de Instalación", meses_instalacion, default=[], key="movil_fecha_instalacion", placeholder="Todas las fechas")
+
+    c4, c5, c6, c7 = st.columns(4)
     with c4:
+        sel_pago = st.multiselect("Estado de Pago", ["PAGADA", "NO PAGADA"], default=[], key="movil_estado_pago", placeholder="Todos los estados")
+    with c5:
         lista_supervisores = []
         if not df_opciones.empty and "SUPERVISOR" in df_opciones.columns:
             lista_supervisores = sorted(df_opciones["SUPERVISOR"].fillna("Sin Supervisor").astype(str).str.strip().replace("", "Sin Supervisor").unique().tolist())
         sel_supervisor = st.multiselect("Supervisor", lista_supervisores, default=[], key="movil_supervisor", placeholder="Todos los supervisores")
-    with c5:
+    with c6:
         tipificaciones_lista = [t for t in obtener_tipificaciones_solo_movil_general() if t != "Todos"]
         sel_tipificacion = st.multiselect("Tipificación", tipificaciones_lista, default=[], key="movil_tipificacion", placeholder="Todas las tipificaciones")
-    with c6:
+    with c7:
         colas_movil = ["EXTERNO"]
         if not df_opciones.empty and "COLA" in df_opciones.columns:
             colas_movil = sorted(df_opciones["COLA"].fillna("EXTERNO").astype(str).unique().tolist())
@@ -5216,6 +5243,15 @@ def mostrar_detalle_movil_general():
 
     if sel_cola != "Todos" and "COLA" in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado["COLA"].fillna("EXTERNO") == sel_cola].copy()
+
+    if sel_fecha_instalacion and "_FECHA_INSTALACION_DT" in df_filtrado.columns and not df_filtrado.empty:
+        fechas_inst_filtrado = pd.to_datetime(df_filtrado["_FECHA_INSTALACION_DT"], errors="coerce")
+        mask_inst = pd.Series([False] * len(df_filtrado), index=df_filtrado.index)
+        for _mes_inst in sel_fecha_instalacion:
+            _m, _y = parse_mes_anio(_mes_inst)
+            if _m and _y:
+                mask_inst |= ((fechas_inst_filtrado.dt.month == _m) & (fechas_inst_filtrado.dt.year == _y))
+        df_filtrado = df_filtrado[mask_inst].copy()
 
     base_valida = df_filtrado[df_filtrado.get("Venta Valida", False)].copy() if not df_filtrado.empty else pd.DataFrame()
 
