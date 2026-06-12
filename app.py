@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import base64
 import os
+import re
 from io import BytesIO
 
 st.set_page_config(page_title="Dashboard Teletalk Digital", layout="wide", initial_sidebar_state="expanded")
@@ -2778,6 +2779,19 @@ def obtener_planes_fija_develz():
             planes.update(df[col].dropna().astype(str).str.strip().replace(["nan","None",""],"").unique().tolist())
     return ["Todos"] + sorted(p for p in planes if p)
 
+def _obtener_col_producto_tv_fija(df):
+    """Columna 'Productos - producto' (clasificación INTERNET+TELEFONIA+AVANZADO/SUPERIOR, etc.).
+    Distinta de 'Productos - producto Especificacion' (velocidad del plan)."""
+    for c in df.columns:
+        norm = c.lower().replace("ó","o").replace("á","a").strip()
+        if norm == "productos - producto":
+            return c
+    for c in df.columns:
+        norm = c.lower().replace("ó","o").replace("á","a")
+        if "productos" in norm and "producto" in norm and "especificacion" not in norm:
+            return c
+    return None
+
 def _obtener_col_plan_fija_develz(df):
     for c in df.columns:
         norm = c.lower().replace("ó","o").replace("á","a")
@@ -2785,9 +2799,98 @@ def _obtener_col_plan_fija_develz(df):
             return c
     for c in df.columns:
         norm = c.lower().replace("ó","o").replace("á","a")
+        if "productos" in norm and "producto" in norm:
+            return c
+    for c in df.columns:
+        norm = c.lower().replace("ó","o").replace("á","a")
         if "especificacion" in norm or "plan" in norm:
             return c
     return None
+
+# Combinaciones de "Productos - producto" que cuentan como "TV" para el KPI % TV
+_PLANES_TV = [
+    "INTERNET + AVANZADO",
+    "INTERNET + TELEFONIA + AVANZADO",
+    "INTERNET + TELEFONIA + SUPERIOR",
+    "INTERNET + SUPERIOR",
+]
+
+@st.cache_data(ttl=300)
+def _mapa_sot_plan_fija_develz():
+    """Mapa SOT -> Plan (Productos - producto Especificacion) desde FIJA_DC y FIJA_TELETALK."""
+    plan_map = {}
+    for archivo in ["FIJA_DC.csv", "FIJA_TELETALK.csv"]:
+        df_src = cargar_csv(archivo)
+        if df_src.empty: continue
+        col_sot = next((c for c in df_src.columns if "sot" in c.lower()), None)
+        col_plan = _obtener_col_plan_fija_develz(df_src)
+        if not col_sot or not col_plan: continue
+        df_src = df_src.copy()
+        df_src["_K"] = df_src[col_sot].fillna("").astype(str).str.strip().str.replace(r"\.0+$","",regex=True)
+        df_src["_P"] = df_src[col_plan].fillna("Sin Plan").astype(str).str.strip().replace("","Sin Plan")
+        for _, row in df_src[["_K","_P"]].iterrows():
+            if row["_K"] and row["_K"] not in ["nan","None",""]:
+                plan_map[row["_K"]] = row["_P"]
+    return plan_map
+
+@st.cache_data(ttl=300)
+def _mapa_sot_producto_tv_fija():
+    """Mapa SOT -> Productos - producto (INTERNET+TELEFONIA, INTERNET+AVANZADO, etc.)
+    desde FIJA_DC y FIJA_TELETALK. Usado para el KPI % TV."""
+    prod_map = {}
+    for archivo in ["FIJA_DC.csv", "FIJA_TELETALK.csv"]:
+        df_src = cargar_csv(archivo)
+        if df_src.empty: continue
+        col_sot = next((c for c in df_src.columns if "sot" in c.lower()), None)
+        col_prod = _obtener_col_producto_tv_fija(df_src)
+        if not col_sot or not col_prod: continue
+        df_src = df_src.copy()
+        df_src["_K"] = df_src[col_sot].fillna("").astype(str).str.strip().str.replace(r"\.0+$","",regex=True)
+        df_src["_P"] = df_src[col_prod].fillna("Sin Producto").astype(str).str.strip().replace("","Sin Producto")
+        for _, row in df_src[["_K","_P"]].iterrows():
+            if row["_K"] and row["_K"] not in ["nan","None",""]:
+                prod_map[row["_K"]] = row["_P"]
+    return prod_map
+
+def calcular_pct_tv_fija(df_filtrado):
+    """
+    Calcula el % de ventas PAGADAS cuyo 'Productos - producto' (cruzado vía SOT desde
+    FIJA_DC/FIJA_TELETALK) corresponde a alguna de las combinaciones con TV:
+    INTERNET + AVANZADO, INTERNET + TELEFONIA + AVANZADO,
+    INTERNET + TELEFONIA + SUPERIOR, INTERNET + SUPERIOR.
+    KPI = Ventas Pagadas con TV / Ventas Pagadas.
+    Retorna (pct_tv, ventas_tv, total_pagadas).
+    """
+    if df_filtrado is None or df_filtrado.empty:
+        return 0.0, 0, 0
+    if "Estado Pago" not in df_filtrado.columns or "SOT" not in df_filtrado.columns:
+        return 0.0, 0, 0
+
+    base_pagada = df_filtrado[df_filtrado["Estado Pago"] == "PAGADA"]
+    total_pagadas = len(base_pagada)
+    if total_pagadas == 0:
+        return 0.0, 0, 0
+
+    prod_map = _mapa_sot_producto_tv_fija()
+    sot_clean = base_pagada["SOT"].fillna("").astype(str).str.strip().str.replace(r"\.0+$","",regex=True)
+    prod_serie = sot_clean.map(lambda s: prod_map.get(s, "Sin Producto"))
+
+    def _normalizar(s):
+        s = str(s).upper().strip()
+        s = s.replace("Í", "I").replace("í", "I")
+        s = s.replace("Á", "A").replace("Ó", "O").replace("É", "E").replace("Ú", "U")
+        s = re.sub(r"\s*\+\s*", " + ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    planes_tv_norm = {_normalizar(p) for p in _PLANES_TV}
+    prod_norm = prod_serie.map(_normalizar)
+    es_tv = prod_norm.isin(planes_tv_norm)
+
+    ventas_tv = int(es_tv.sum())
+    pct_tv = (ventas_tv / total_pagadas * 100) if total_pagadas > 0 else 0.0
+    return pct_tv, ventas_tv, total_pagadas
+
 
 def resumen_planes_fija_gerencial(df_filtrado):
     cols_salida = ["Plan","Canal","Total Ventas","Pagadas","Caídas","% Efectividad","Comisión Total"]
@@ -2968,14 +3071,16 @@ def mostrar_detalle_fija_general():
 
     total, pagadas, caidas, comision, pct = kpi_detalle_fija(df_filtrado)
     ticket_promedio_fija = (comision / pagadas) if pagadas > 0 else 0.0
+    pct_tv, ventas_tv, _total_tv = calcular_pct_tv_fija(df_filtrado)
     st.markdown("### Resumen General")
-    k1,k2,k3,k4,k5,k6 = st.columns(6)
+    k1,k2,k3,k4,k5,k6,k7 = st.columns(7)
     _kpi_card_html(k1,"Total Ventas",  f"{total:,}",          "Base DEVELZ",   color_borde, color_borde)
     _kpi_card_html(k2,"Pagadas",       f"{pagadas:,}",         "Cruza con Claro","#059669","#059669")
     _kpi_card_html(k3,"Caídas",        f"{caidas:,}",          "Sin pago / sin SOT","#dc2626","#dc2626")
-    _kpi_card_html(k4,"% Efectividad", f"{pct:.2f}%",          "Pagadas / Total",color_borde,"#059669" if pct>=75 else "#d97706")
-    _kpi_card_html(k5,"Comisión Total",formatear_moneda(comision),"Pagada",     color_borde, color_borde)
-    _kpi_card_html(k6,"Ticket Promedio",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
+    _kpi_card_html(k4,"Comisión Total",formatear_moneda(comision),"Pagada",     color_borde, color_borde)
+    _kpi_card_html(k5,"% TV", f"{pct_tv:.2f}%", f"{ventas_tv:,} pagadas con TV", "#7c3aed", "#7c3aed")
+    _kpi_card_html(k6,"% Efectividad", f"{pct:.2f}%",          "Pagadas / Total",color_borde,"#059669" if pct>=75 else "#d97706")
+    _kpi_card_html(k7,"Ticket Promedio",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
     st.write("---")
 
     tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📋 Detalle Ventas","📆 Ventas por Día","🏆 Ranking Supervisor","👥 Ranking Asesores","📍 Ranking Departamentos","📊 Estados Operativos","📦 Por Planes"])
@@ -4325,19 +4430,37 @@ def construir_comision_claro_movil_general(filtro_mes="Todos los meses", filtro_
     base = pd.concat(bases, ignore_index=True)
     return float(pd.to_numeric(base["_COMISION_TOTAL"], errors="coerce").fillna(0).sum())
 
-def resumen_general_movil_df(df):
+def resumen_general_movil_df(df, totales_kpi=None):
     # Tabla ejecutiva por canal. Se retira Operaciones Únicas y se agrega Caída.
+    # totales_kpi: dict opcional {"D&C": total_ventas_kpi, "Teletalk": total_ventas_kpi}
+    # Si se provee, "Total Ventas" y "No Pagadas" se alinean con la misma lógica de los KPIs
+    # (Total Ventas = lectura directa de MOVIL_DC/MOVIL_TELETALK con exclusiones;
+    #  No Pagadas = Total Ventas - Pagadas), para que KPI y tabla coincidan.
     cols = ["Canal", "Total Ventas", "Pagadas", "No Pagadas", "Caída", "Comision", "% Participación"]
-    if df.empty: return pd.DataFrame(columns=cols)
+    if df.empty and not totales_kpi: return pd.DataFrame(columns=cols)
 
-    base = df[df["Venta Valida"]].copy()
-    if base.empty: return pd.DataFrame(columns=cols)
+    base = df[df["Venta Valida"]].copy() if not df.empty else pd.DataFrame(columns=df.columns if not df.empty else [])
+    if base.empty and not totales_kpi: return pd.DataFrame(columns=cols)
+
+    canales = set()
+    if not base.empty:
+        canales.update(base["Canal"].dropna().unique().tolist())
+    if totales_kpi:
+        canales.update(totales_kpi.keys())
 
     filas = []
-    for canal, g in base.groupby("Canal", dropna=False):
-        total_ventas = int(g["Tipo Operacion"].count())
-        pagadas = int((g["Estado Pago"] == "PAGADA").sum())
-        no_pagadas = int((g["Estado Pago"] == "NO PAGADA").sum())
+    for canal in canales:
+        g = base[base["Canal"] == canal] if not base.empty else base
+        pagadas = int((g["Estado Pago"] == "PAGADA").sum()) if not g.empty else 0
+
+        if totales_kpi is not None and canal in totales_kpi:
+            total_ventas = int(totales_kpi[canal])
+        else:
+            total_ventas = int(g["Tipo Operacion"].count()) if not g.empty else 0
+
+        no_pagadas = total_ventas - pagadas
+        if no_pagadas < 0:
+            no_pagadas = 0
         caida = (no_pagadas / total_ventas * 100) if total_ventas > 0 else 0
         filas.append({
             "Canal": canal,
@@ -4351,16 +4474,17 @@ def resumen_general_movil_df(df):
     total_general = int(resumen["Total Ventas"].sum()) if not resumen.empty else 0
     resumen["% Participación"] = resumen["Total Ventas"].apply(lambda x: f"{(x / total_general * 100):.2f}%" if total_general > 0 else "0.00%")
 
-    pagadas_total = int((base["Estado Pago"] == "PAGADA").sum())
-    no_pagadas_total = int((base["Estado Pago"] == "NO PAGADA").sum())
+    pagadas_total = int(resumen["Pagadas"].sum()) if not resumen.empty else 0
+    no_pagadas_total = int(resumen["No Pagadas"].sum()) if not resumen.empty else 0
     caida_total = (no_pagadas_total / total_general * 100) if total_general > 0 else 0
+    comision_total = float(resumen["Comision"].sum()) if not resumen.empty else 0.0
     total_row = pd.DataFrame([{
         "Canal": "TOTAL",
         "Total Ventas": total_general,
         "Pagadas": pagadas_total,
         "No Pagadas": no_pagadas_total,
         "Caída": f"{caida_total:.2f}%",
-        "Comision": _sumar_comision_real_unica(base),
+        "Comision": comision_total,
         "% Participación": "100.00%" if total_general > 0 else "0.00%"
     }])
     return pd.concat([resumen[cols], total_row[cols]], ignore_index=True)
@@ -5093,7 +5217,6 @@ def mostrar_detalle_movil_general():
     if sel_cola != "Todos" and "COLA" in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado["COLA"].fillna("EXTERNO") == sel_cola].copy()
 
-    resumen_general = resumen_general_movil_df(df_filtrado)
     base_valida = df_filtrado[df_filtrado.get("Venta Valida", False)].copy() if not df_filtrado.empty else pd.DataFrame()
 
     # ── KPI Total Ventas: leer directo de MOVIL_DC + MOVIL_TELETALK excluyendo productos no comerciales ──
@@ -5102,6 +5225,7 @@ def mostrar_detalle_movil_general():
         "IFI INTERNET INALAMBRICO", "TFI", "OLO INTERNET PORTATIL"
     ]
     _dfs_kpi = []
+    _totales_kpi_canal = {}
     for _canal_kpi, _archivo_kpi in [("D&C", "MOVIL_DC.csv"), ("Teletalk", "MOVIL_TELETALK.csv")]:
         if sel_canal and _canal_kpi not in sel_canal:
             continue
@@ -5126,7 +5250,12 @@ def mostrar_detalle_movil_general():
             _prod_norm = _df_kpi[_col_prod_kpi].fillna("").astype(str).str.strip().str.upper()
             _df_kpi = _df_kpi[~_prod_norm.isin([p.upper() for p in _PRODUCTOS_EXCLUIR])].copy()
         _dfs_kpi.append(_df_kpi)
+        _totales_kpi_canal[_canal_kpi] = _totales_kpi_canal.get(_canal_kpi, 0) + len(_df_kpi)
     total_ventas = int(sum(len(d) for d in _dfs_kpi))
+
+    # Tabla "Resumen General por Canal" alineada con la lógica de los KPIs:
+    # Total Ventas por canal = lectura directa MOVIL_DC/MOVIL_TELETALK con exclusiones (igual al KPI).
+    resumen_general = resumen_general_movil_df(df_filtrado, totales_kpi=_totales_kpi_canal)
 
     pagadas_total = int((base_valida["Estado Pago"] == "PAGADA").sum()) if not base_valida.empty and "Estado Pago" in base_valida.columns else 0
     no_pagadas_total = total_ventas - pagadas_total
