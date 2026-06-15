@@ -3080,7 +3080,7 @@ def mostrar_detalle_fija_general():
     _kpi_card_html(k4,"Comisión Total",formatear_moneda(comision),"Pagada",     color_borde, color_borde)
     _kpi_card_html(k5,"% TV", f"{pct_tv:.2f}%", f"{ventas_tv:,} pagadas con TV", "#7c3aed", "#7c3aed")
     _kpi_card_html(k6,"% Efectividad", f"{pct:.2f}%",          "Pagadas / Total",color_borde,"#059669" if pct>=75 else "#d97706")
-    _kpi_card_html(k7,"Ticket Promedio",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
+    _kpi_card_html(k7,"Promedio Prime",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
     st.write("---")
 
     tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📋 Detalle Ventas","📆 Ventas por Día","🏆 Ranking Supervisor","👥 Ranking Asesores","📍 Ranking Departamentos","📊 Estados Operativos","📦 Por Planes"])
@@ -5317,7 +5317,7 @@ def mostrar_detalle_movil_general():
     _kpi_movil_teletalk_card(k5, "Portabilidad", f"{portabilidad_total:,}", "Pagadas · Portabilidad", "#0f4287")
     _kpi_movil_teletalk_card(k6, "Alta", f"{alta_total:,}", "Pagadas · Alta", "#7c3aed")
     _kpi_movil_teletalk_card(k7, "Comisión", formatear_moneda(comision_total), "Cruce DNI + mes/año", "#0891b2")
-    _kpi_movil_teletalk_card(k8, "Ticket Promedio", formatear_moneda(ticket_promedio_movil), "Comisión / Pagadas", "#0891b2")
+    _kpi_movil_teletalk_card(k8, "Promedio Prime", formatear_moneda(ticket_promedio_movil), "Comisión / Pagadas", "#0891b2")
 
     st.write("")
 
@@ -6055,7 +6055,7 @@ if seccion == "fija":
             def _resumir_por_canal_fija(df_full, canal):
                 df_c = df_full[df_full["Canal"] == canal].copy() if not df_full.empty else df_full
                 if df_c.empty or "_MES_VENTA" not in df_c.columns:
-                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","% TV","PROMEDIO PRIME"])
                 df_c["_com_num"] = pd.to_numeric(df_c.get("COMISION", 0), errors="coerce").fillna(0)
                 rows = []
                 for mes, grp in df_c[df_c["_MES_VENTA"] != ""].groupby("_MES_VENTA"):
@@ -6065,17 +6065,19 @@ if seccion == "fija":
                     pct    = (caidas / brutas * 100) if brutas > 0 else 0.0
                     com    = float(grp["_com_num"].sum())
                     ticket = (com / netas) if netas > 0 else 0.0
+                    pct_tv, _, _ = calcular_pct_tv_fija(grp)
                     m_num, y_num = parse_mes_anio(mes)
                     rows.append({
                         "MES": mes,
                         "VENTAS BRUTAS": brutas,
                         "VENTAS NETAS": netas,
                         "% CAÍDA": f"{pct:.2f}%",
-                        "TICKET PROMEDIO": formatear_moneda(ticket),
+                        "% TV": f"{pct_tv:.2f}%",
+                        "PROMEDIO PRIME": formatear_moneda(ticket),
                         "_sort": (y_num or 0, m_num or 0)
                     })
                 if not rows:
-                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","% TV","PROMEDIO PRIME"])
                 return pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
             col_dc, col_tt = st.columns(2)
@@ -6166,7 +6168,7 @@ else:
                                del mes + exclusión de productos (igual al KPI Total Ventas)
             - VENTAS NETAS   = base_valida[Estado Pago == PAGADA] del canal
             - % CAÍDA        = (Brutas - Netas) / Brutas * 100
-            - TICKET PROMEDIO = _sumar_comision_real_unica(base_pagada) / Netas
+            - PROMEDIO PRIME = _sumar_comision_real_unica(base_pagada) / Netas
             """
             archivo_kpi = "MOVIL_DC.csv" if canal_filtro == "D&C" else "MOVIL_TELETALK.csv"
             meses_lista = [m for m in obtener_meses_movil_general() if m != "Todos los meses"]
@@ -6202,7 +6204,7 @@ else:
                 if df_mes.empty:
                     if brutas > 0:
                         rows.append({"MES": mes, "VENTAS BRUTAS": brutas, "VENTAS NETAS": 0,
-                                     "% CAÍDA": "100.00%", "TICKET PROMEDIO": formatear_moneda(0),
+                                     "% CAÍDA": "100.00%", "PROMEDIO PRIME": formatear_moneda(0),
                                      "_sort": (y_num, m_num)})
                     continue
                 df_canal = df_mes[df_mes["Canal"] == canal_filtro].copy()
@@ -6219,11 +6221,11 @@ else:
                     "VENTAS BRUTAS": brutas,
                     "VENTAS NETAS": netas,
                     "% CAÍDA": f"{pct:.2f}%",
-                    "TICKET PROMEDIO": formatear_moneda(ticket),
+                    "PROMEDIO PRIME": formatear_moneda(ticket),
                     "_sort": (y_num, m_num)
                 })
             if not rows:
-                return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+                return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","PROMEDIO PRIME"])
             return pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
         with st.spinner("Cargando resumen comparativo MÓVIL..."):
