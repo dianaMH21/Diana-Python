@@ -6029,18 +6029,70 @@ if seccion == "fija":
             <div class="caratula-divider"></div>
             <div class="sub-title">D&amp;C DIGITAL GROUP &nbsp;&nbsp;·&nbsp;&nbsp; TELETALK CONTACT CENTER</div>
         </div>''', unsafe_allow_html=True)
-        col_dc, col_filtros, col_tt = st.columns([1,1.2,1])
-        with col_filtros:
-            st.markdown('<div class="block-filter">', unsafe_allow_html=True)
-            sel_inst = st.selectbox("FECHA INSTALACIÓN", obtener_meses_fija("FECHA INSTALACION"), key="fija_sel_inst")
-            sel_gene = st.selectbox("FECHA DE VENTA", obtener_meses_fija("FECHA GENERACION"), key="fija_sel_gene")
-            st.markdown('</div>', unsafe_allow_html=True)
-        v_dc, c_dc = obtener_metricas_fija("dbo.CLARO_DC_FIJA", sel_inst, sel_gene)
-        v_tt, c_tt = obtener_metricas_fija("dbo.CLARO_TELETALK_FIJA", sel_inst, sel_gene)
-        with col_dc:
-            st.markdown(f'<div class="kpi-wrapper"><div class="box-header-dc">D&C DIGITAL GROUP</div><div class="data-card-dc"><span class="label">Acumulado soles</span><span class="value">{formatear_moneda(c_dc)}</span></div><div class="data-card-dc"><span class="label">Ventas totales</span><span class="value">{v_dc:,}</span></div></div>', unsafe_allow_html=True)
-        with col_tt:
-            st.markdown(f'<div class="kpi-wrapper"><div class="box-header-tt">TELETALK CONTACT CENTER</div><div class="data-card-tt"><span class="label">Acumulado soles</span><span class="value">{formatear_moneda(c_tt)}</span></div><div class="data-card-tt"><span class="label">Ventas totales</span><span class="value">{v_tt:,}</span></div></div>', unsafe_allow_html=True)
+
+        st.markdown("""
+        <style>
+        .tbl-canal-title {font-size:17px;font-weight:900;letter-spacing:.08em;padding:10px 0 6px 2px;margin-top:18px;}
+        .tbl-canal-dc    {color:#0057b8;}
+        .tbl-canal-tt    {color:#70008f;}
+        </style>""", unsafe_allow_html=True)
+
+        with st.spinner("Cargando resumen comparativo FIJA..."):
+            # Carga única igual que Detalle Fija General
+            if "dfg_det_cache" not in st.session_state:
+                _df_base = construir_detalle_fija_general("Todos los meses", "Todos los meses")
+                if "FECHA DE VENTA" in _df_base.columns:
+                    _dt = pd.to_datetime(_df_base["FECHA DE VENTA"], dayfirst=True, errors="coerce")
+                    _df_base["_MES_VENTA"] = _dt.apply(
+                        lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
+                    )
+                else:
+                    _df_base["_MES_VENTA"] = ""
+                st.session_state["dfg_det_cache"] = _df_base
+
+            df_base = st.session_state["dfg_det_cache"]
+
+            def _resumir_por_canal_fija(df_full, canal):
+                df_c = df_full[df_full["Canal"] == canal].copy() if not df_full.empty else df_full
+                if df_c.empty or "_MES_VENTA" not in df_c.columns:
+                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+                df_c["_com_num"] = pd.to_numeric(df_c.get("COMISION", 0), errors="coerce").fillna(0)
+                rows = []
+                for mes, grp in df_c[df_c["_MES_VENTA"] != ""].groupby("_MES_VENTA"):
+                    brutas = len(grp)
+                    netas  = int((grp["Estado Pago"] == "PAGADA").sum())
+                    caidas = brutas - netas
+                    pct    = (caidas / brutas * 100) if brutas > 0 else 0.0
+                    com    = float(grp["_com_num"].sum())
+                    ticket = (com / netas) if netas > 0 else 0.0
+                    m_num, y_num = parse_mes_anio(mes)
+                    rows.append({
+                        "MES": mes,
+                        "VENTAS BRUTAS": brutas,
+                        "VENTAS NETAS": netas,
+                        "% CAÍDA": f"{pct:.2f}%",
+                        "TICKET PROMEDIO": formatear_moneda(ticket),
+                        "_sort": (y_num or 0, m_num or 0)
+                    })
+                if not rows:
+                    return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+                return pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+
+            col_dc, col_tt = st.columns(2)
+            with col_dc:
+                st.markdown('<div class="tbl-canal-title tbl-canal-dc">📡 D&amp;C DIGITAL GROUP</div>', unsafe_allow_html=True)
+                tbl_dc = _resumir_por_canal_fija(df_base, "D&C")
+                if tbl_dc.empty:
+                    st.info("Sin datos disponibles.")
+                else:
+                    st.dataframe(tbl_dc, use_container_width=True, hide_index=True)
+            with col_tt:
+                st.markdown('<div class="tbl-canal-title tbl-canal-tt">📡 TELETALK CONTACT CENTER</div>', unsafe_allow_html=True)
+                tbl_tt = _resumir_por_canal_fija(df_base, "Teletalk")
+                if tbl_tt.empty:
+                    st.info("Sin datos disponibles.")
+                else:
+                    st.dataframe(tbl_tt, use_container_width=True, hide_index=True)
 
     elif opcion == "Detalle Fija General":
         mostrar_detalle_fija_general()
@@ -6093,55 +6145,100 @@ else:
             <div class="main-title">REPORTE <span class="title-accent">COMPARATIVO MÓVIL</span></div>
             <div class="caratula-divider"></div>
             <div class="sub-title">D&amp;C DIGITAL GROUP &nbsp;&nbsp;·&nbsp;&nbsp; TELETALK CONTACT CENTER</div>
-            <div class="caratula-pills">
-                <div class="caratula-pill">📲 Portabilidad &amp; Altas</div>
-                <div class="caratula-pill">💰 Comisiones Pagadas</div>
-                <div class="caratula-pill">📈 Total Ventas</div>
-                <div class="caratula-pill">🏆 Desempeño por Canal</div>
-            </div>
         </div>''', unsafe_allow_html=True)
 
-        df_dc_tmp = preparar_fechas_movil(cargar_csv("CLARO_DC_MOVIL.csv"))
-        meses_carga_dc = (obtener_meses_movil("FECHA CARGA",["CLARO_DC_MOVIL.csv"])
-            if "FECHA CARGA" in df_dc_tmp.columns and df_dc_tmp["FECHA CARGA"].notna().any()
-            else obtener_meses_movil("FECHA OPERACION",["CLARO_DC_MOVIL.csv"]))
+        st.markdown("""
+        <style>
+        .tbl-canal-title {font-size:17px;font-weight:900;letter-spacing:.08em;padding:10px 0 6px 2px;margin-top:18px;}
+        .tbl-canal-dc    {color:#0057b8;}
+        .tbl-canal-tt    {color:#70008f;}
+        </style>""", unsafe_allow_html=True)
 
-        todos_op = sorted(set(obtener_meses_movil("FECHA OPERACION",["CLARO_DC_MOVIL.csv"]) +
-            obtener_meses_movil("FECHA OPERACION",["CLARO_TELETALK_MOVIL.csv"])) - {"Todos los meses"},
-            key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)))
-        todos_ca = sorted(set(meses_carga_dc + obtener_meses_movil("FECHA CARGA",["CLARO_TELETALK_MOVIL.csv"])) - {"Todos los meses"},
-            key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)))
+        _PRODUCTOS_EXCLUIR_MOV = [
+            "CHIP PREPAGO", "PRE A PRE", "2 PLAY 800 MBPS",
+            "IFI INTERNET INALAMBRICO", "TFI", "OLO INTERNET PORTATIL"
+        ]
 
-        col_dc, col_filtros, col_tt = st.columns([1,1.2,1])
-        with col_filtros:
-            st.markdown('<div class="block-filter">', unsafe_allow_html=True)
-            sel_op = st.selectbox("FECHA DE VENTA",     ["Todos los meses"]+todos_op, key="movil_comp_fecha_operacion")
-            sel_ca = st.selectbox("FECHA DE ACTIVACION", ["Todos los meses"]+todos_ca, key="movil_comp_fecha_carga")
-            st.markdown('</div>', unsafe_allow_html=True)
+        def _resumir_por_canal_movil(canal_filtro):
+            """
+            Replica EXACTAMENTE la lógica de mostrar_detalle_movil_general por cada mes:
+            - VENTAS BRUTAS  = lectura directa MOVIL_DC/TELETALK filtrado por _FECHA_VENTA_MOVIL_DT
+                               del mes + exclusión de productos (igual al KPI Total Ventas)
+            - VENTAS NETAS   = base_valida[Estado Pago == PAGADA] del canal
+            - % CAÍDA        = (Brutas - Netas) / Brutas * 100
+            - TICKET PROMEDIO = _sumar_comision_real_unica(base_pagada) / Netas
+            """
+            archivo_kpi = "MOVIL_DC.csv" if canal_filtro == "D&C" else "MOVIL_TELETALK.csv"
+            meses_lista = [m for m in obtener_meses_movil_general() if m != "Todos los meses"]
+            rows = []
+            for mes in meses_lista:
+                m_num, y_num = parse_mes_anio(mes)
+                if not m_num or not y_num:
+                    continue
 
-        def filtrar_cmp(df, f_op, f_ca, respaldo=False):
-            df = preparar_fechas_movil(df.copy())
-            if f_op != "Todos los meses" and "FECHA OPERACION" in df.columns:
-                df = filtrar_por_mes_anio(df, "FECHA OPERACION", f_op)
-            if f_ca != "Todos los meses":
-                if "FECHA CARGA" in df.columns and df["FECHA CARGA"].notna().any():
-                    df = filtrar_por_mes_anio(df, "FECHA CARGA", f_ca)
-                elif respaldo and "FECHA OPERACION" in df.columns:
-                    df = filtrar_por_mes_anio(df, "FECHA OPERACION", f_ca)
-            return df
+                # ── VENTAS BRUTAS: misma lógica que KPI "Total Ventas" ──────────────
+                _df_kpi, _ = _leer_csv_movil_con_fallback([archivo_kpi])
+                brutas = 0
+                if not _df_kpi.empty:
+                    _fecha_kpi, _ = _obtener_fecha_venta_movil_general(_df_kpi)
+                    _df_kpi = _df_kpi.copy()
+                    _df_kpi["_FECHA_KPI_DT"] = _fecha_kpi
+                    _df_kpi = _df_kpi[
+                        (_df_kpi["_FECHA_KPI_DT"].dt.month == m_num) &
+                        (_df_kpi["_FECHA_KPI_DT"].dt.year  == y_num)
+                    ].copy()
+                    _col_prod = encontrar_columna_flexible(_df_kpi, [
+                        "Productos - producto Especificacion", "Productos - Producto Especificacion",
+                        "PRODUCTOS - PRODUCTO ESPECIFICACION", "Producto Especificacion",
+                        "PRODUCTO ESPECIFICACION", "Producto", "PRODUCTO", "Plan", "PLAN"
+                    ])
+                    if _col_prod:
+                        _prod_norm = _df_kpi[_col_prod].fillna("").astype(str).str.strip().str.upper()
+                        _df_kpi = _df_kpi[~_prod_norm.isin([p.upper() for p in _PRODUCTOS_EXCLUIR_MOV])].copy()
+                    brutas = len(_df_kpi)
 
-        df_dc_c = filtrar_cmp(get_tabla("dbo.CLARO_DC_MOVIL"), sel_op, sel_ca, respaldo=True)
-        df_tt_c = filtrar_cmp(get_tabla("dbo.CLARO_TELETALK_MOVIL"), sel_op, sel_ca)
+                # ── VENTAS NETAS / COMISION: construir_resumen_movil_general(mes) ──
+                df_mes = construir_resumen_movil_general(mes)
+                if df_mes.empty:
+                    if brutas > 0:
+                        rows.append({"MES": mes, "VENTAS BRUTAS": brutas, "VENTAS NETAS": 0,
+                                     "% CAÍDA": "100.00%", "TICKET PROMEDIO": formatear_moneda(0),
+                                     "_sort": (y_num, m_num)})
+                    continue
+                df_canal = df_mes[df_mes["Canal"] == canal_filtro].copy()
+                base_valida = df_canal[df_canal["Venta Valida"]].copy() if "Venta Valida" in df_canal.columns else df_canal.copy()
+                netas = int((base_valida["Estado Pago"] == "PAGADA").sum()) if "Estado Pago" in base_valida.columns else 0
+                base_pagada = base_valida[base_valida["Estado Pago"] == "PAGADA"].copy() if netas > 0 else pd.DataFrame()
+                com = _sumar_comision_real_unica(base_pagada) if not base_pagada.empty else 0.0
 
-        def kpi_movil(df):
-            tr = df.get("TRANSACCION", pd.Series([""] * len(df))).fillna("").astype(str)
-            p = int(_es_portabilidad_movil(tr).sum()); a = int(_es_alta_movil(tr).sum())
-            return p+a, p, a, float(obtener_comision_movil(df).sum()) if not df.empty else 0.0
+                caidas = brutas - netas
+                pct    = (caidas / brutas * 100) if brutas > 0 else 0.0
+                ticket = (com / netas) if netas > 0 else 0.0
+                rows.append({
+                    "MES": mes,
+                    "VENTAS BRUTAS": brutas,
+                    "VENTAS NETAS": netas,
+                    "% CAÍDA": f"{pct:.2f}%",
+                    "TICKET PROMEDIO": formatear_moneda(ticket),
+                    "_sort": (y_num, m_num)
+                })
+            if not rows:
+                return pd.DataFrame(columns=["MES","VENTAS BRUTAS","VENTAS NETAS","% CAÍDA","TICKET PROMEDIO"])
+            return pd.DataFrame(rows).sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
-        t_dc,p_dc,a_dc,c_dc = kpi_movil(df_dc_c)
-        t_tt,p_tt,a_tt,c_tt = kpi_movil(df_tt_c)
-
-        with col_dc:
-            st.markdown(f'<div class="kpi-wrapper"><div class="box-header-dc">D&C DIGITAL GROUP</div><div class="data-card-dc"><span class="label">Comisión pagada</span><span class="value">{formatear_moneda(c_dc)}</span></div><div class="data-card-dc"><span class="label">Total ventas</span><span class="value">{t_dc:,}</span></div><div class="data-card-dc"><span class="label">Portabilidades</span><span class="value">{p_dc:,}</span></div><div class="data-card-dc"><span class="label">Altas nuevas</span><span class="value">{a_dc:,}</span></div></div>', unsafe_allow_html=True)
-        with col_tt:
-            st.markdown(f'<div class="kpi-wrapper"><div class="box-header-tt">TELETALK CONTACT CENTER</div><div class="data-card-tt"><span class="label">Comisión pagada</span><span class="value">{formatear_moneda(c_tt)}</span></div><div class="data-card-tt"><span class="label">Total ventas</span><span class="value">{t_tt:,}</span></div><div class="data-card-tt"><span class="label">Portabilidades</span><span class="value">{p_tt:,}</span></div><div class="data-card-tt"><span class="label">Altas nuevas</span><span class="value">{a_tt:,}</span></div></div>', unsafe_allow_html=True)
+        with st.spinner("Cargando resumen comparativo MÓVIL..."):
+            col_dc, col_tt = st.columns(2)
+            with col_dc:
+                st.markdown('<div class="tbl-canal-title tbl-canal-dc">📱 D&amp;C DIGITAL GROUP</div>', unsafe_allow_html=True)
+                tbl_dc = _resumir_por_canal_movil("D&C")
+                if tbl_dc.empty:
+                    st.info("Sin datos disponibles.")
+                else:
+                    st.dataframe(tbl_dc, use_container_width=True, hide_index=True)
+            with col_tt:
+                st.markdown('<div class="tbl-canal-title tbl-canal-tt">📱 TELETALK CONTACT CENTER</div>', unsafe_allow_html=True)
+                tbl_tt = _resumir_por_canal_movil("Teletalk")
+                if tbl_tt.empty:
+                    st.info("Sin datos disponibles.")
+                else:
+                    st.dataframe(tbl_tt, use_container_width=True, hide_index=True)
