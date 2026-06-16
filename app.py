@@ -3013,6 +3013,11 @@ def mostrar_detalle_fija_general():
     st.write("---")
 
     # ── Carga única en session_state (no recarga por cada widget) ──────────────
+    # Invalidar caché si le faltan las columnas de mes precalculadas
+    if "dfg_det_cache" in st.session_state:
+        _cached = st.session_state["dfg_det_cache"]
+        if "_MES_INST" not in _cached.columns or "_MES_VENTA" not in _cached.columns:
+            del st.session_state["dfg_det_cache"]
     if "dfg_det_cache" not in st.session_state:
         with st.spinner("Cargando base DEVELZ + cruce CLARO... (solo la primera vez)"):
             _df = construir_detalle_fija_general("Todos los meses", "Todos los meses")
