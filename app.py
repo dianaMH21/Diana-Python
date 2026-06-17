@@ -3013,11 +3013,6 @@ def mostrar_detalle_fija_general():
     st.write("---")
 
     # ── Carga única en session_state (no recarga por cada widget) ──────────────
-    # Invalidar caché si le faltan las columnas de mes precalculadas
-    if "dfg_det_cache" in st.session_state:
-        _cached = st.session_state["dfg_det_cache"]
-        if "_MES_INST" not in _cached.columns or "_MES_VENTA" not in _cached.columns:
-            del st.session_state["dfg_det_cache"]
     if "dfg_det_cache" not in st.session_state:
         with st.spinner("Cargando base DEVELZ + cruce CLARO... (solo la primera vez)"):
             _df = construir_detalle_fija_general("Todos los meses", "Todos los meses")
@@ -3036,6 +3031,9 @@ def mostrar_detalle_fija_general():
             st.session_state["dfg_det_cache"] = _df
 
     df_det = st.session_state["dfg_det_cache"]
+    # ── Invalidar cache si le faltan las columnas de mes precalculadas ──────
+    if "_MES_INST" not in df_det.columns or "_MES_VENTA" not in df_det.columns:
+        del st.session_state["dfg_det_cache"]; st.rerun()
     if df_det.empty:
         st.warning("No se encontraron datos. Verifica que FIJA_DC.csv, FIJA_TELETALK.csv y los archivos Claro esten en la carpeta correcta.")
         if st.button("Reintentar carga", key="dfg_retry"):
@@ -3075,14 +3073,60 @@ def mostrar_detalle_fija_general():
     df_filtrado = df_filtrado.copy()
 
     total, pagadas, caidas, comision, pct = kpi_detalle_fija(df_filtrado)
+
+    # ── Cuando hay filtro de Fecha de Instalación: Pagadas y Comisión
+    #    vienen directamente de CLARO_DC_FIJA + CLARO_TELETALK_FIJA
+    #    filtrando por FECHA INSTALACION del mes seleccionado y COMISIONES == SI  ─────
+    if filtro_mes:
+        _claro_total    = 0
+        _claro_pagadas  = 0
+        _claro_comision = 0.0
+        for _archivo_claro in ["CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv"]:
+            # Filtrar por canal si corresponde
+            if filtro_canal == "D&C" and "TELETALK" in _archivo_claro: continue
+            if filtro_canal == "Teletalk" and _archivo_claro == "CLARO_DC_FIJA.csv": continue
+            _df_c = preparar_fechas_fija(cargar_csv(_archivo_claro))
+            if _df_c.empty: continue
+            # Filtrar por los meses de instalación seleccionados
+            if "FECHA INSTALACION" in _df_c.columns:
+                _df_c["_MES_CLARO"] = _df_c["FECHA INSTALACION"].apply(
+                    lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
+                )
+                _df_c = _df_c[_df_c["_MES_CLARO"].isin(filtro_mes)].copy()
+            # Deduplicar por SOT única antes de contar
+            _col_sot_claro = next((c for c in _df_c.columns if c.strip().upper() == "SOT"), None)
+            if _col_sot_claro:
+                _df_c = _df_c.drop_duplicates(subset=[_col_sot_claro]).copy()
+            # Total Ventas = SOTs únicas del mes
+            _claro_total += len(_df_c)
+            # Filtrar solo las que tienen COMISIONES == SI
+            _col_com = next((c for c in _df_c.columns if c.strip().upper() == "COMISIONES"), None)
+            if _col_com:
+                _mask_si = _df_c[_col_com].fillna("").astype(str).str.strip().str.upper() == "SI"
+                _df_pagadas_claro = _df_c[_mask_si].copy()
+            else:
+                _df_pagadas_claro = _df_c.copy()
+            _claro_pagadas += len(_df_pagadas_claro)
+            # Sumar comisión de esas filas (ya sin duplicados)
+            _col_monto = next((c for c in _df_pagadas_claro.columns
+                               if c.strip().upper() in ["COMISION","COMISIÓN","MONTO","COM ETAPA"]), None)
+            if _col_monto:
+                _claro_comision += pd.to_numeric(_df_pagadas_claro[_col_monto], errors="coerce").fillna(0).sum()
+        # Reemplazar KPIs con los valores CLARO cuando hay filtro de instalación
+        total    = _claro_total
+        pagadas  = _claro_pagadas
+        comision = _claro_comision
+        caidas   = total - pagadas
+        pct      = (pagadas / total * 100) if total > 0 else 0.0
+
     ticket_promedio_fija = (comision / pagadas) if pagadas > 0 else 0.0
     pct_tv, ventas_tv, _total_tv = calcular_pct_tv_fija(df_filtrado)
     st.markdown("### Resumen General")
     k1,k2,k3,k4,k5,k6,k7 = st.columns(7)
-    _kpi_card_html(k1,"Total Ventas",  f"{total:,}",          "Base DEVELZ",   color_borde, color_borde)
-    _kpi_card_html(k2,"Pagadas",       f"{pagadas:,}",         "Cruza con Claro","#059669","#059669")
-    _kpi_card_html(k3,"Caídas",        f"{caidas:,}",          "Sin pago / sin SOT","#dc2626","#dc2626")
-    _kpi_card_html(k4,"Comisión Total",formatear_moneda(comision),"Pagada",     color_borde, color_borde)
+    _kpi_card_html(k1,"Total Ventas",  f"{total:,}",          "Base CLARO (mes inst.)" if filtro_mes else "Base DEVELZ",   color_borde, color_borde)
+    _kpi_card_html(k2,"Pagadas",       f"{pagadas:,}",         "Cruza con Claro" if filtro_mes else "Cruza con Claro","#059669","#059669")
+    _kpi_card_html(k3,"No Pagadas" if filtro_mes else "Caídas", f"{caidas:,}", "Total - Pagadas" if filtro_mes else "Sin pago / sin SOT","#dc2626","#dc2626")
+    _kpi_card_html(k4,"Comisión Total",formatear_moneda(comision),"Desde CLARO (mes inst.)" if filtro_mes else "Pagada", color_borde, color_borde)
     _kpi_card_html(k5,"% TV", f"{pct_tv:.2f}%", f"{ventas_tv:,} pagadas con TV", "#7c3aed", "#7c3aed")
     _kpi_card_html(k6,"% Efectividad", f"{pct:.2f}%",          "Pagadas / Total",color_borde,"#059669" if pct>=75 else "#d97706")
     _kpi_card_html(k7,"Promedio Prime",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
