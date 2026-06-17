@@ -656,7 +656,7 @@ def _obtener_documento_develz(df):
 @st.cache_data(ttl=600)
 def _base_claro_pago(tabla_ventas):
     df_c = preparar_fechas_fija(get_tabla(tabla_ventas))
-    cols = ["SOT","COMISION_CLARO","COMISIONES_CLARO"]
+    cols = ["SOT","COMISION_CLARO","COMISIONES_CLARO","FECHA_INSTALACION_CLARO"]
     if df_c.empty or "SOT" not in df_c.columns: return pd.DataFrame(columns=cols)
     df_c = df_c.copy()
     df_c["SOT"] = _normalizar_sot_series(df_c["SOT"])
@@ -665,9 +665,19 @@ def _base_claro_pago(tabla_ventas):
     df_c["COMISIONES_CLARO"] = (df_c["COMISIONES"].fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
                                  if "COMISIONES" in df_c.columns else "")
     df_c["_pagada_flag"] = (df_c["COMISIONES_CLARO"] == "SI") | (df_c["COMISION_CLARO"] > 0)
+    # Extraer FECHA INSTALACION de CLARO para mostrarla en el detalle
+    df_c["_FECHA_INST_CLARO_DT"] = pd.to_datetime(
+        df_c["FECHA INSTALACION"] if "FECHA INSTALACION" in df_c.columns else None,
+        errors="coerce", dayfirst=True
+    )
     resumen = df_c.groupby("SOT", as_index=False).agg(
-        COMISION_CLARO=("COMISION_CLARO","sum"), PAGADA_FLAG=("_pagada_flag","max"))
+        COMISION_CLARO=("COMISION_CLARO","sum"),
+        PAGADA_FLAG=("_pagada_flag","max"),
+        FECHA_INSTALACION_CLARO=("_FECHA_INST_CLARO_DT","max"))
     resumen["COMISIONES_CLARO"] = resumen["PAGADA_FLAG"].apply(lambda x: "SI" if x else "NO")
+    resumen["FECHA_INSTALACION_CLARO"] = pd.to_datetime(
+        resumen["FECHA_INSTALACION_CLARO"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y").fillna("")
     return resumen[cols]
 
 @st.cache_data(ttl=600)
@@ -717,7 +727,10 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
         df["COMISIONES_CLARO"] = df.get("COMISIONES_CLARO","").fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
         df["Estado Pago"] = "CAÍDA"
         df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION"] > 0), "Estado Pago"] = "PAGADA"
-        df["FECHA INSTALACION"] = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
+        # FECHA INSTALACION: usar la del archivo CLARO cuando hay cruce, si no la de DEVELZ
+        _fecha_claro = df.get("FECHA_INSTALACION_CLARO", pd.Series("", index=df.index)).fillna("")
+        _fecha_develz = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
+        df["FECHA INSTALACION"] = _fecha_claro.where(_fecha_claro != "", _fecha_develz)
         df["FECHA DE VENTA"] = df["_FECHA_VENTA_DT"].dt.strftime("%d/%m/%Y").fillna("")
         for col in cols_salida:
             if col not in df.columns: df[col] = ""
@@ -1751,7 +1764,7 @@ def _obtener_documento_develz(df):
 @st.cache_data(ttl=600)
 def _base_claro_pago(tabla_ventas):
     df_c = preparar_fechas_fija(get_tabla(tabla_ventas))
-    cols = ["SOT","COMISION_CLARO","COMISIONES_CLARO"]
+    cols = ["SOT","COMISION_CLARO","COMISIONES_CLARO","FECHA_INSTALACION_CLARO"]
     if df_c.empty or "SOT" not in df_c.columns: return pd.DataFrame(columns=cols)
     df_c = df_c.copy()
     df_c["SOT"] = _normalizar_sot_series(df_c["SOT"])
@@ -1760,9 +1773,19 @@ def _base_claro_pago(tabla_ventas):
     df_c["COMISIONES_CLARO"] = (df_c["COMISIONES"].fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
                                  if "COMISIONES" in df_c.columns else "")
     df_c["_pagada_flag"] = (df_c["COMISIONES_CLARO"] == "SI") | (df_c["COMISION_CLARO"] > 0)
+    # Extraer FECHA INSTALACION de CLARO para mostrarla en el detalle
+    df_c["_FECHA_INST_CLARO_DT"] = pd.to_datetime(
+        df_c["FECHA INSTALACION"] if "FECHA INSTALACION" in df_c.columns else None,
+        errors="coerce", dayfirst=True
+    )
     resumen = df_c.groupby("SOT", as_index=False).agg(
-        COMISION_CLARO=("COMISION_CLARO","sum"), PAGADA_FLAG=("_pagada_flag","max"))
+        COMISION_CLARO=("COMISION_CLARO","sum"),
+        PAGADA_FLAG=("_pagada_flag","max"),
+        FECHA_INSTALACION_CLARO=("_FECHA_INST_CLARO_DT","max"))
     resumen["COMISIONES_CLARO"] = resumen["PAGADA_FLAG"].apply(lambda x: "SI" if x else "NO")
+    resumen["FECHA_INSTALACION_CLARO"] = pd.to_datetime(
+        resumen["FECHA_INSTALACION_CLARO"], errors="coerce"
+    ).dt.strftime("%d/%m/%Y").fillna("")
     return resumen[cols]
 
 @st.cache_data(ttl=600)
@@ -1812,7 +1835,10 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
         df["COMISIONES_CLARO"] = df.get("COMISIONES_CLARO","").fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
         df["Estado Pago"] = "CAÍDA"
         df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION"] > 0), "Estado Pago"] = "PAGADA"
-        df["FECHA INSTALACION"] = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
+        # FECHA INSTALACION: usar la del archivo CLARO cuando hay cruce, si no la de DEVELZ
+        _fecha_claro = df.get("FECHA_INSTALACION_CLARO", pd.Series("", index=df.index)).fillna("")
+        _fecha_develz = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
+        df["FECHA INSTALACION"] = _fecha_claro.where(_fecha_claro != "", _fecha_develz)
         df["FECHA DE VENTA"] = df["_FECHA_VENTA_DT"].dt.strftime("%d/%m/%Y").fillna("")
         # ── COLA: cruce con DOTACION por extensión del usuario ─────────────
         # BUSCARV: EXTENSION DEL USUARIO (Excel datos)  ->  USUARIO (DOTACION)  ->  SEGMENTO
