@@ -3062,7 +3062,34 @@ def mostrar_detalle_fija_general():
 
     # ── Filtrado vectorizado (rápido, sin .apply fila a fila) ───────────────────
     df_filtrado = df_det
-    if filtro_mes:          df_filtrado = df_filtrado[df_filtrado["_MES_INST"].isin(filtro_mes)]
+
+    if filtro_mes:
+        # Fuente de verdad: SOTs instalados en el mes según CLARO.
+        # Filtramos DEVELZ por esos SOTs para que la tabla muestre exactamente
+        # las ventas instaladas en el mes, igual que la lógica de los KPIs.
+        _sots_claro_inst = set()
+        for _archivo_claro in ["CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv"]:
+            if filtro_canal == "D&C" and "TELETALK" in _archivo_claro: continue
+            if filtro_canal == "Teletalk" and _archivo_claro == "CLARO_DC_FIJA.csv": continue
+            _df_c = preparar_fechas_fija(cargar_csv(_archivo_claro))
+            if _df_c.empty: continue
+            if "FECHA INSTALACION" in _df_c.columns:
+                _df_c["_MES_CLARO"] = _df_c["FECHA INSTALACION"].apply(
+                    lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
+                )
+                _df_c = _df_c[_df_c["_MES_CLARO"].isin(filtro_mes)].copy()
+            _col_sot_claro = next((c for c in _df_c.columns if c.strip().upper() == "SOT"), None)
+            if _col_sot_claro:
+                _sots_claro_inst.update(
+                    _normalizar_sot_series(_df_c[_col_sot_claro].fillna("").astype(str)).tolist()
+                )
+        _sots_claro_inst.discard("")
+        if _sots_claro_inst:
+            df_filtrado = df_filtrado[df_filtrado["SOT"].isin(_sots_claro_inst)]
+        else:
+            # Fallback: si CLARO no devuelve nada, filtrar por _MES_INST de DEVELZ
+            df_filtrado = df_filtrado[df_filtrado["_MES_INST"].isin(filtro_mes)]
+
     if filtro_fecha_venta:  df_filtrado = df_filtrado[df_filtrado["_MES_VENTA"].isin(filtro_fecha_venta)]
     if filtro_canal   != "Todos": df_filtrado = df_filtrado[df_filtrado["Canal"]       == filtro_canal]
     if filtro_estado  != "Todos": df_filtrado = df_filtrado[df_filtrado["Estado Pago"] == filtro_estado]
