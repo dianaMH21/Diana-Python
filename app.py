@@ -124,8 +124,58 @@ img_caratula = img_caratula_png if os.path.exists(img_caratula_png) else img_car
 img_dc       = os.path.join(ruta_base, "34bab75f-2b2e-455e-8935-377abf566b76.jpg")
 img_tt       = os.path.join(ruta_base, "ab3ac40e-1612-430f-bb3a-817d24b709db.jpg")
 
+# ─────────────────────────────────────────────────────────────────────────
+# DVZ.csv unificado: reemplaza a FIJA_DC.csv, FIJA_TELETALK.csv,
+# MOVIL_DC.csv y MOVIL_TELETALK.csv. Se identifica:
+#   - FIJA vs MOVIL  -> columna "Tipo Producto" (valores "FIJA" / "MOVIL")
+#   - D&C vs Teletalk -> columna "Datos Adicionales - Clip" (valores "D&C" / "TELETALK")
+# Si DVZ.csv no existe, se conserva el comportamiento original (4 archivos sueltos).
+# ─────────────────────────────────────────────────────────────────────────
+_DVZ_SPLIT_MAP = {
+    "FIJA_DC.csv":       ("FIJA",  "D&C"),
+    "FIJA_TELETALK.csv": ("FIJA",  "TELETALK"),
+    "MOVIL_DC.csv":      ("MOVIL", "D&C"),
+    "MOVIL_TELETALK.csv":("MOVIL", "TELETALK"),
+}
+
+@st.cache_data(ttl=600)
+def _leer_dvz_crudo():
+    ruta = os.path.join(DATA_DIR, "DVZ.csv")
+    if not os.path.exists(ruta):
+        return pd.DataFrame()
+    for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
+        for sep in [";",",","\t"]:
+            try:
+                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
+                df.columns = df.columns.str.strip()
+                if len(df.columns) > 1: return df
+            except UnicodeDecodeError:
+                continue
+            except Exception:
+                continue
+    return pd.DataFrame()
+
+@st.cache_data(ttl=600)
+def _cargar_dvz_filtrado(nombre):
+    tipo_prod, canal_clip = _DVZ_SPLIT_MAP[nombre]
+    df = _leer_dvz_crudo()
+    if df.empty:
+        return df
+    col_tipo = next((c for c in df.columns if c.strip().lower() == "tipo producto"), None)
+    col_clip = next((c for c in df.columns if c.strip().lower() == "datos adicionales - clip"), None)
+    if not col_tipo or not col_clip:
+        return pd.DataFrame()
+    mask_tipo = df[col_tipo].fillna("").astype(str).str.strip().str.upper() == tipo_prod
+    mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == canal_clip
+    return df[mask_tipo & mask_clip].copy()
+
 @st.cache_data(ttl=600)
 def cargar_csv(nombre):
+    # Interceptar los 4 archivos antiguos -> leer desde DVZ.csv si existe
+    if nombre in _DVZ_SPLIT_MAP and os.path.exists(os.path.join(DATA_DIR, "DVZ.csv")):
+        df_dvz = _cargar_dvz_filtrado(nombre)
+        if not df_dvz.empty:
+            return df_dvz
     ruta = os.path.join(DATA_DIR, nombre)
     for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
         for sep in [";",",","\t"]:
@@ -1194,8 +1244,58 @@ img_caratula = img_caratula_png if os.path.exists(img_caratula_png) else img_car
 img_dc       = os.path.join(ruta_base, "34bab75f-2b2e-455e-8935-377abf566b76.jpg")
 img_tt       = os.path.join(ruta_base, "ab3ac40e-1612-430f-bb3a-817d24b709db.jpg")
 
+# ─────────────────────────────────────────────────────────────────────────
+# DVZ.csv unificado: reemplaza a FIJA_DC.csv, FIJA_TELETALK.csv,
+# MOVIL_DC.csv y MOVIL_TELETALK.csv. Se identifica:
+#   - FIJA vs MOVIL  -> columna "Tipo Producto" (valores "FIJA" / "MOVIL")
+#   - D&C vs Teletalk -> columna "Datos Adicionales - Clip" (valores "D&C" / "TELETALK")
+# Si DVZ.csv no existe, se conserva el comportamiento original (4 archivos sueltos).
+# ─────────────────────────────────────────────────────────────────────────
+_DVZ_SPLIT_MAP = {
+    "FIJA_DC.csv":       ("FIJA",  "D&C"),
+    "FIJA_TELETALK.csv": ("FIJA",  "TELETALK"),
+    "MOVIL_DC.csv":      ("MOVIL", "D&C"),
+    "MOVIL_TELETALK.csv":("MOVIL", "TELETALK"),
+}
+
+@st.cache_data(ttl=600)
+def _leer_dvz_crudo():
+    ruta = os.path.join(DATA_DIR, "DVZ.csv")
+    if not os.path.exists(ruta):
+        return pd.DataFrame()
+    for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
+        for sep in [";",",","\t"]:
+            try:
+                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
+                df.columns = df.columns.str.strip()
+                if len(df.columns) > 1: return df
+            except UnicodeDecodeError:
+                continue
+            except Exception:
+                continue
+    return pd.DataFrame()
+
+@st.cache_data(ttl=600)
+def _cargar_dvz_filtrado(nombre):
+    tipo_prod, canal_clip = _DVZ_SPLIT_MAP[nombre]
+    df = _leer_dvz_crudo()
+    if df.empty:
+        return df
+    col_tipo = next((c for c in df.columns if c.strip().lower() == "tipo producto"), None)
+    col_clip = next((c for c in df.columns if c.strip().lower() == "datos adicionales - clip"), None)
+    if not col_tipo or not col_clip:
+        return pd.DataFrame()
+    mask_tipo = df[col_tipo].fillna("").astype(str).str.strip().str.upper() == tipo_prod
+    mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == canal_clip
+    return df[mask_tipo & mask_clip].copy()
+
 @st.cache_data(ttl=600)
 def cargar_csv(nombre):
+    # Interceptar los 4 archivos antiguos -> leer desde DVZ.csv si existe
+    if nombre in _DVZ_SPLIT_MAP and os.path.exists(os.path.join(DATA_DIR, "DVZ.csv")):
+        df_dvz = _cargar_dvz_filtrado(nombre)
+        if not df_dvz.empty:
+            return df_dvz
     ruta = os.path.join(DATA_DIR, nombre)
     for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
         for sep in [";",",","\t"]:
@@ -5713,354 +5813,213 @@ def mostrar_detalle_movil_general():
             )
 
 def login_inicio():
-    set_bg(img_caratula)
 
     if "login_ok" not in st.session_state:
         st.session_state["login_ok"] = False
 
     if st.session_state["login_ok"]: return True
 
+    # ────────────────────────────────────────────────────────────────────────
+    #  CSS — transforma las dos columnas de Streamlit en el panel split
+    # ────────────────────────────────────────────────────────────────────────
     st.markdown("""
     <style>
-        section[data-testid="stSidebar"] {display:none !important;}
-        div[data-testid="collapsedControl"] {display:none !important;}
-        header[data-testid="stHeader"] {background: transparent !important;}
+        /* Ocultar sidebar, header y quitar padding general */
+        section[data-testid="stSidebar"],
+        div[data-testid="collapsedControl"]   { display:none !important; }
+        header[data-testid="stHeader"]        { display:none !important; }
+        .stApp                                { background:#eef0fb !important; }
         .block-container {
-            padding-top: 1.4rem !important;
-            padding-bottom: 1.2rem !important;
-            max-width: 1220px !important;
+            padding: 0 !important;
+            max-width: 100% !important;
         }
-        .stApp::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            background:
-                radial-gradient(circle at 12% 18%, rgba(37,99,235,.28), transparent 28%),
-                radial-gradient(circle at 86% 12%, rgba(124,58,237,.20), transparent 26%),
-                linear-gradient(135deg, rgba(2,6,23,.44), rgba(15,23,42,.34));
-            pointer-events: none;
-            z-index: 0;
+
+        /* ── Centrar todo en la pantalla ── */
+        div[data-testid="stHorizontalBlock"] {
+            align-items: stretch !important;
+            gap: 0 !important;
+            min-height: 100vh;
+            padding: 0 !important;
+            margin: 0 !important;
         }
-        .login-shell {
-            min-height: 84vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            z-index: 1;
+
+        /* ── Columna IZQUIERDA — azul ── */
+        div[data-testid="stHorizontalBlock"] > div:first-child {
+            background: linear-gradient(145deg, #2d38c7 0%, #3a4ee6 50%, #4730d8 100%) !important;
+            padding: 60px 52px 44px 52px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            position: relative !important;
+            overflow: hidden !important;
+            min-height: 100vh !important;
         }
-        .login-panel {
-            width: 100%;
-            max-width: 1180px;
-            display: grid;
-            grid-template-columns: 1.08fr .92fr;
-            min-height: 620px;
-            border-radius: 36px;
-            overflow: hidden;
-            background: rgba(255,255,255,.92);
-            border: 1px solid rgba(255,255,255,.75);
-            box-shadow: 0 38px 110px rgba(2,8,23,.34), 0 12px 36px rgba(15,66,135,.18);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+        /* Arcos decorativos en el lado azul */
+        div[data-testid="stHorizontalBlock"] > div:first-child::before {
+            content: "" !important;
+            position: absolute !important;
+            width: 560px; height: 560px !important;
+            right: -180px; bottom: -220px !important;
+            border-radius: 50% !important;
+            border: 1.5px solid rgba(255,255,255,.18) !important;
+            pointer-events: none !important;
         }
-        .login-brand {
-            position: relative;
-            padding: 54px 50px;
+        div[data-testid="stHorizontalBlock"] > div:first-child::after {
+            content: "" !important;
+            position: absolute !important;
+            width: 400px; height: 400px !important;
+            right: -100px; bottom: -140px !important;
+            border-radius: 50% !important;
+            border: 1.5px solid rgba(255,255,255,.12) !important;
+            pointer-events: none !important;
+        }
+
+        /* ── Columna DERECHA — blanca ── */
+        div[data-testid="stHorizontalBlock"] > div:last-child {
+            background: #ffffff !important;
+            padding: 60px 56px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            min-height: 100vh !important;
+        }
+
+        /* ── Textos del lado izquierdo ── */
+        .ls-star {
+            font-size: 56px; line-height: 1;
+            margin-bottom: 44px; display: block;
             color: white;
-            background:
-                linear-gradient(135deg, rgba(7,24,52,.98), rgba(15,66,135,.96) 52%, rgba(79,23,135,.94)),
-                radial-gradient(circle at 78% 22%, rgba(255,255,255,.18), transparent 28%);
-            overflow: hidden;
         }
-        .login-brand::before {
-            content: "";
-            position: absolute;
-            width: 360px;
-            height: 360px;
-            right: -120px;
-            top: -120px;
-            border-radius: 999px;
-            background: rgba(255,255,255,.12);
-            filter: blur(1px);
+        .ls-greeting {
+            font-size: 50px; font-weight: 900;
+            line-height: 1.05; letter-spacing: -.04em;
+            color: white; margin-bottom: 20px;
         }
-        .login-brand::after {
-            content: "";
+        .ls-desc {
+            font-size: 15px; font-weight: 500;
+            line-height: 1.72; color: rgba(255,255,255,.80);
+            max-width: 360px;
+        }
+        .ls-copy {
+            font-size: 12px; color: rgba(255,255,255,.45);
+            font-weight: 500; margin-top: 0;
+        }
+        /* Arco extra (tercero) en el lado azul */
+        .ls-arc3 {
             position: absolute;
-            inset: 0;
-            background:
-                linear-gradient(120deg, transparent 0%, rgba(255,255,255,.11) 48%, transparent 78%),
-                repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px 64px);
+            width: 260px; height: 260px;
+            right: -40px; bottom: -70px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(255,255,255,.09);
             pointer-events: none;
         }
-        .login-brand-content {
-            position: relative;
-            z-index: 2;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        .login-topline {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 14px;
-            margin-bottom: 48px;
-        }
-        .login-logo-mark {
-            width: 50px;
-            height: 50px;
-            border-radius: 18px;
-            display: grid;
-            place-items: center;
-            background: rgba(255,255,255,.16);
-            border: 1px solid rgba(255,255,255,.28);
-            font-size: 24px;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.20);
-        }
-        .login-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 15px;
-            border-radius: 999px;
-            background: rgba(255,255,255,.13);
-            border: 1px solid rgba(255,255,255,.24);
-            color: rgba(255,255,255,.88);
-            font-size: 11px;
-            font-weight: 950;
-            letter-spacing: .14em;
-            text-transform: uppercase;
-            white-space: nowrap;
-        }
-        .login-main-title {
-            font-size: 54px;
-            line-height: .98;
-            font-weight: 950;
-            margin: 0 0 18px 0;
-            letter-spacing: -.055em;
-        }
-        .login-main-title span {
-            color: #bfdbfe;
-        }
-        .login-main-subtitle {
-            font-size: 16px;
-            line-height: 1.65;
-            color: rgba(255,255,255,.80);
-            max-width: 470px;
-            margin-bottom: 34px;
-            font-weight: 650;
-        }
-        .login-feature-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 14px;
-            margin-top: auto;
-        }
-        .login-feature {
-            background: rgba(255,255,255,.12);
-            border: 1px solid rgba(255,255,255,.18);
-            border-radius: 20px;
-            padding: 16px 16px 15px 16px;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
-        }
-        .login-feature strong {
-            display: block;
-            font-size: 18px;
-            font-weight: 950;
-            margin-bottom: 5px;
-            letter-spacing: -.02em;
-        }
-        .login-feature span {
-            display: block;
-            font-size: 12px;
-            line-height: 1.35;
-            font-weight: 750;
-            color: rgba(255,255,255,.72);
-        }
-        .login-form-area {
-            padding: 50px 46px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            background:
-                linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.94));
-        }
-        .login-form-card {
-            background: rgba(255,255,255,.96);
-            border: 1px solid rgba(15,66,135,.10);
-            border-radius: 30px;
-            padding: 32px 30px 26px 30px;
-            box-shadow: 0 22px 54px rgba(15,66,135,.11);
-        }
-        .login-form-kicker {
-            color: #2563eb;
-            font-size: 11px;
-            font-weight: 950;
-            letter-spacing: .16em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .login-form-title {
-            color: #0f172a;
-            font-size: 32px;
-            font-weight: 950;
-            letter-spacing: -.04em;
-            margin-bottom: 8px;
-            text-align: left;
-        }
-        .login-form-subtitle {
-            color: #64748b;
-            font-size: 14px;
-            font-weight: 700;
-            line-height: 1.50;
-            margin-bottom: 24px;
-            text-align: left;
-        }
+
+        /* ── Textos del lado derecho ── */
+        .ls-brand   { font-size:17px; font-weight:900; color:#0f172a; margin-bottom:44px; }
+        .ls-title   { font-size:32px; font-weight:900; color:#0f172a; letter-spacing:-.04em; margin-bottom:6px; }
+        .ls-sub     { font-size:13px; color:#64748b; font-weight:500; line-height:1.6; margin-bottom:28px; }
+        .ls-foot    { text-align:center; margin-top:18px; font-size:12px; color:#94a3b8; }
+
+        /* ── Widgets Streamlit en el lado derecho ── */
         div[data-testid="stSelectbox"] label,
         div[data-testid="stTextInput"] label {
-            color: #334155 !important;
-            font-weight: 950 !important;
+            color: #374151 !important;
             font-size: 12px !important;
-            letter-spacing: .08em;
+            font-weight: 800 !important;
+            letter-spacing: .07em;
             text-transform: uppercase;
         }
-        div[data-testid="stSelectbox"] > div,
+        div[data-testid="stSelectbox"] > div > div,
         div[data-testid="stTextInput"] input {
-            border-radius: 16px !important;
-        }
-        div[data-testid="stTextInput"] input {
-            border: 1px solid rgba(15,66,135,.18) !important;
-            background: #f8fafc !important;
-            min-height: 50px !important;
-            font-weight: 800 !important;
-            color: #0f172a !important;
+            border-radius: 10px !important;
+            border: 1.5px solid #d1d5db !important;
+            background: #fafafa !important;
+            min-height: 48px !important;
+            font-size: 14px !important;
+            color: #111827 !important;
         }
         div[data-testid="stTextInput"] input:focus {
-            border-color: #2563eb !important;
-            box-shadow: 0 0 0 4px rgba(37,99,235,.13) !important;
+            border-color: #3b4fe8 !important;
+            box-shadow: 0 0 0 3px rgba(59,79,232,.14) !important;
         }
-        .stButton > button {
-            background: linear-gradient(135deg, #0f4287 0%, #2563eb 55%, #4f46e5 100%) !important;
-            color: white !important;
-            border: 0 !important;
-            border-radius: 17px !important;
+
+        /* ── Botón negro ── */
+        div[data-testid="stHorizontalBlock"] > div:last-child .stButton > button {
+            background: #111827 !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 12px !important;
             min-height: 52px !important;
-            font-weight: 950 !important;
-            letter-spacing: .06em !important;
-            text-transform: uppercase !important;
-            box-shadow: 0 18px 34px rgba(37,99,235,.28) !important;
-            transition: transform .16s ease, box-shadow .16s ease, filter .16s ease !important;
+            font-weight: 900 !important;
+            font-size: 15px !important;
+            letter-spacing: .03em !important;
+            box-shadow: 0 4px 18px rgba(17,24,39,.20) !important;
+            transition: all .16s ease !important;
+            margin-top: 6px !important;
         }
-        .stButton > button:hover {
-            transform: translateY(-2px);
-            filter: brightness(1.04);
-            box-shadow: 0 24px 44px rgba(37,99,235,.36) !important;
-        }
-        .login-security-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 18px 0 2px 0;
-        }
-        .login-security-pill {
-            border-radius: 16px;
-            padding: 12px 13px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            color: #475569;
-            font-size: 12px;
-            font-weight: 850;
-            text-align: center;
-        }
-        .login-footnote {
-            margin-top: 18px;
-            padding: 13px 15px;
-            border-radius: 17px;
-            background: linear-gradient(135deg, #eff6ff, #f5f3ff);
-            border: 1px solid #dbeafe;
-            color: #1e3a8a;
-            font-size: 12px;
-            font-weight: 900;
-            text-align: center;
-        }
-        @media (max-width: 950px) {
-            .login-panel { grid-template-columns: 1fr; min-height: auto; }
-            .login-brand { padding: 38px 30px; }
-            .login-form-area { padding: 30px; }
-            .login-main-title { font-size: 40px; }
-            .login-topline { margin-bottom: 30px; }
-        }
-        @media (max-width: 560px) {
-            .login-feature-grid, .login-security-row { grid-template-columns: 1fr; }
-            .login-main-title { font-size: 34px; }
-            .login-form-card { padding: 26px 22px; }
+        div[data-testid="stHorizontalBlock"] > div:last-child .stButton > button:hover {
+            background: #1e293b !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 10px 28px rgba(17,24,39,.28) !important;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div class="login-shell">
-        <div class="login-panel">
-            <div class="login-brand">
-                <div class="login-brand-content">
-                    <div class="login-topline">
-                        <div class="login-logo-mark">📊</div>
-                        <div class="login-badge">Acceso ejecutivo seguro</div>
-                    </div>
-                    <h1 class="login-main-title">Dashboard <span>Teletalk</span> Digital</h1>
-                    <div class="login-main-subtitle">
-                        Centro de control gerencial para ventas, comisiones, productividad comercial y seguimiento operativo en tiempo real.
-                    </div>
-                    <div class="login-feature-grid">
-                        <div class="login-feature"><strong>Fija</strong><span>Instalaciones, ventas, caídas y ranking</span></div>
-                        <div class="login-feature"><strong>Móvil</strong><span>Portabilidad, altas y desempeño</span></div>
-                        <div class="login-feature"><strong>KPI</strong><span>Indicadores ejecutivos de gestión</span></div>
-                        <div class="login-feature"><strong>Auditoría</strong><span>Control interno y trazabilidad</span></div>
-                    </div>
-                </div>
-            </div>
-            <div class="login-form-area">
-                <div class="login-form-card">
-                    <div class="login-form-kicker">Panel privado</div>
-                    <div class="login-form-title">Iniciar sesión</div>
-                    <div class="login-form-subtitle">Ingresa tus credenciales autorizadas para acceder al tablero corporativo.</div>
-    """, unsafe_allow_html=True)
+    # ────────────────────────────────────────────────────────────────────────
+    #  Layout: dos columnas de Streamlit = izquierda azul | derecha blanca
+    # ────────────────────────────────────────────────────────────────────────
+    col_izq, col_der = st.columns([1, 1])
 
-    USUARIOS = {
-        "Fiorella": "F10r3LLa123*",
-        "LuisT": "Corp.LT_2026!k",
-        "PaoloA": "Corp.PA_2026!k",
-        "DavidG": "Corp.DG_2026!k",
-        "SusanG": "Corp.SG_2026!k",
-    }
-
-    usuario = st.selectbox(
-        "Usuario",
-        [""] + list(USUARIOS.keys()),
-        key="login_usuario",
-        placeholder="Selecciona tu usuario"
-    )
-    password = st.text_input("Contraseña", type="password", key="login_password", placeholder="Ingresa tu contraseña")
-
-    if st.button("Ingresar al dashboard", use_container_width=True):
-        if usuario in USUARIOS and password == USUARIOS[usuario]:
-            st.session_state["login_ok"] = True
-            st.session_state["usuario_logueado"] = usuario
-            st.rerun()
-        else:
-            st.error("Usuario o contraseña incorrectos.")
-
-    st.markdown("""
-                    <div class="login-security-row">
-                        <div class="login-security-pill">🔐 Acceso restringido</div>
-                        <div class="login-security-pill">📈 Uso gerencial</div>
-                    </div>
-                    <div class="login-footnote">Sistema protegido · Información confidencial · Uso interno autorizado</div>
-                </div>
-            </div>
+    # ── IZQUIERDA: solo HTML estático (sin widgets) ──────────────────────
+    with col_izq:
+        st.markdown("""
+        <div class="ls-arc3"></div>
+        <span class="ls-star">✳</span>
+        <div class="ls-greeting">
+            ¡Hola,<br>Bienvenido! 👋
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        <div class="ls-desc">
+            Gestión de ventas, comisiones y productividad comercial.
+            Ranking de Asesores - %TV - Promedio Prime.
+        </div>
+        <div style="flex:1"></div>
+        <div class="ls-copy">© 2025 Teletalk Digital · Todos los derechos reservados.</div>
+        """, unsafe_allow_html=True)
+
+    # ── DERECHA: encabezado HTML + widgets reales de Streamlit ───────────
+    with col_der:
+        st.markdown("""
+        <div class="ls-brand">📊 Teletalk - Digital</div>
+        <div class="ls-title">¡Bienvenido de vuelta!</div>
+        <div class="ls-sub">Ingresa tus credenciales para acceder al panel corporativo.</div>
+        """, unsafe_allow_html=True)
+
+        USUARIOS = {
+            "Fiorella": "F10r3LLa123*",
+            "LuisT":    "Corp.LT_2026!k",
+            "PaoloA":   "Corp.PA_2026!k",
+            "DavidG":   "Corp.DG_2026!k",
+            "SusanG":   "Corp.SG_2026!k",
+        }
+
+        usuario  = st.selectbox("Usuario", [""] + list(USUARIOS.keys()),
+                                key="login_usuario", placeholder="Selecciona tu usuario")
+        password = st.text_input("Contraseña", type="password",
+                                 key="login_password", placeholder="Ingresa tu contraseña")
+
+        if st.button("Ingresar al dashboard", use_container_width=True):
+            if usuario in USUARIOS and password == USUARIOS[usuario]:
+                st.session_state["login_ok"]         = True
+                st.session_state["usuario_logueado"] = usuario
+                st.success(f"✅ ¡Hola, {usuario}! Bienvenido. Cargando tu panel...")
+                st.balloons()
+                import time; time.sleep(1.0)
+                st.rerun()
+            else:
+                st.error("❌ Usuario o contraseña incorrectos.")
+
+        st.markdown('<div class="ls-foot">🔐 Acceso restringido · Uso interno autorizado</div>',
+                    unsafe_allow_html=True)
 
     st.stop()
 
