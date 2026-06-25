@@ -6354,34 +6354,90 @@ if seccion == "factor":
                 # _dfp_pag ya tiene ambas (SOT vacío en móvil → no suma TV, correcto)
                 _pct_tv_npn, _ventas_tv_npn, _ = calcular_pct_tv_fija(_dfp_pag)
 
-                # ── KPI 3 y 6 meses ───────────────────────────────────
-                import datetime as _dt
-                _hoy        = _dt.date.today()
-                _mes_actual = pd.Timestamp(_hoy).replace(day=1)
-                _inicio_3m  = (_mes_actual - pd.DateOffset(months=2)).date()
-                _inicio_6m  = (_mes_actual - pd.DateOffset(months=5)).date()
-                _netas_3m   = 0
-                _netas_6m   = 0
-                if "_FVTA_PROC" in _dfp_pag.columns:
-                    _fvta_date = _dfp_pag["_FVTA_PROC"].dt.date
-                    _netas_3m  = int((_fvta_date >= _inicio_3m).sum())
-                    _netas_6m  = int((_fvta_date >= _inicio_6m).sum())
+                # ── KPI NETAS 3 MESES: lógica directa desde archivos CLARO ──────
+                # FIJA:  SOTs únicas en CLARO_DC_FIJA con COMISION > 0
+                #        + SOTs únicas en CLARO_DC_FIJA_SEGUNDA_CAIDA con COM ETAPA > 0
+                # MÓVIL: SECs únicas en CLARO_TELETALK_MOVIL con COMISION TOTAL > 0
+                #        + SECs únicas en CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA con COMISION > 0
+
+                _netas_3m_fija  = 0
+                _netas_3m_movil = 0
+
+                # ── FIJA: solo 2da Etapa con COM ETAPA > 0 ───────────
+                # La base principal (CLARO_DC_FIJA) ya está en Ventas Netas.
+                # Aquí solo contamos las SOTs que recuperaron comisión en 2da etapa.
+                try:
+                    _df_cf2 = cargar_csv("CLARO_DC_FIJA_SEGUNDA_CAIDA.csv")
+                    if not _df_cf2.empty and "SOT" in _df_cf2.columns:
+                        _col_com_cf2 = encontrar_columna(_df_cf2,
+                            ["COM ETAPA","COM_ETAPA","Com Etapa","COMISION ETAPA","COMISIÓN ETAPA"])
+                        if _col_com_cf2:
+                            _cf2_mask = pd.to_numeric(_df_cf2[_col_com_cf2], errors="coerce").fillna(0) > 0
+                            _sots_cf2 = set(_df_cf2.loc[_cf2_mask, "SOT"].dropna().astype(str).str.strip().unique())
+                            _netas_3m_fija = len(_sots_cf2)
+                except Exception:
+                    pass
+
+                # ── MÓVIL: solo 2da Caída con COMISION > 0 ───────────
+                # La base principal (CLARO_TELETALK_MOVIL) ya está en Ventas Netas.
+                # Aquí solo contamos las SECs que recuperaron comisión en 2da caída.
+                try:
+                    _df_cm2 = cargar_csv("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
+                    if not _df_cm2.empty:
+                        _col_sec_cm2 = encontrar_columna(_df_cm2, ["SEC","Sec","sec"])
+                        _col_com_cm2 = encontrar_columna(_df_cm2,
+                            ["COMISION","COMISIÓN","Comision","Comisión","MONTO"])
+                        if _col_sec_cm2 and _col_com_cm2:
+                            _cm2_mask = pd.to_numeric(_df_cm2[_col_com_cm2], errors="coerce").fillna(0) > 0
+                            # Contar todas las filas con COMISION>0 (una SEC repetida = números distintos)
+                            _netas_3m_movil = int(_cm2_mask.sum())
+                except Exception:
+                    pass
+
+                # Disponibilidad por combinación Servicio + Canal:
+                # FIJA + D&C       → Netas 3M y 6M disponibles (CLARO_DC_FIJA_SEGUNDA_CAIDA)
+                # FIJA + Teletalk  → no disponible (sin archivos)
+                # MOVIL + D&C      → no disponible (sin archivos)
+                # MOVIL + Teletalk → Netas 3M disponible (CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA)
+                # Todos + Todos    → suma solo lo disponible
+
+                _serv_up  = _f_serv.upper()   # "FIJA" / "MOVIL" / "TODOS"
+                _canal_up = _f_canal.upper()   # "D&C" / "TELETALK" / "TODOS"
+
+                _disponible_fija  = (_serv_up in ("FIJA",  "TODOS")) and (_canal_up in ("D&C",      "TODOS"))
+                _disponible_movil = (_serv_up in ("MOVIL", "TODOS")) and (_canal_up in ("TELETALK",  "TODOS"))
+
+                if _disponible_fija and _disponible_movil:
+                    _val_n3m = f"{_netas_3m_fija + _netas_3m_movil:,}"
+                    _sub_n3m = "2da Etapa Fija D&C + 2da Caída Móvil Teletalk"
+                elif _disponible_fija:
+                    _val_n3m = f"{_netas_3m_fija:,}"
+                    _sub_n3m = "SOT únicas con COM ETAPA > 0 (2da Etapa)"
+                elif _disponible_movil:
+                    _val_n3m = f"{_netas_3m_movil:,}"
+                    _sub_n3m = "SEC únicas con COMISION > 0 (2da Caída)"
+                else:
+                    _val_n3m = "—"
+                    _sub_n3m = "Sin archivos para esta combinación"
+
+                # Netas 6 Meses: por ahora solo disponible para FIJA + D&C (mismo archivo 2da Etapa)
+                if _disponible_fija and not _disponible_movil:
+                    _val_n6m = "—"
+                    _sub_n6m = "Próximamente"
+                elif not _disponible_fija and not _disponible_movil:
+                    _val_n6m = "—"
+                    _sub_n6m = "Sin archivos para esta combinación"
+                else:
+                    _val_n6m = "—"
+                    _sub_n6m = "Próximamente"
 
             # ── KPIs en una fila de 5 ────────────────────────────────
             st.markdown("### 📊 KPIs Resumen NPN")
             _nk1, _nk2, _nk3, _nk4, _nk5 = st.columns(5)
 
-            # Netas 3 y 6 Meses: solo se muestran cuando el filtro Servicio es FIJA.
-            # Si es "Todos" o "MOVIL", se muestra "—" porque la lógica aún no está definida para esos casos.
-            _solo_fija = _f_serv.upper() == "FIJA"
-            _val_netas_3m = f"{_netas_3m:,}" if _solo_fija else "—"
-            _val_netas_6m = f"{_netas_6m:,}" if _solo_fija else "—"
-            _sub_netas_3m = "Últimos 3 meses por F. Venta" if _solo_fija else "Solo disponible en FIJA"
-            _sub_netas_6m = "Últimos 6 meses por F. Venta" if _solo_fija else "Solo disponible en FIJA"
-
             _kpi_card_html(_nk1, "Ventas Netas",   f"{_ventas_netas_total:,}",            "PAGADAS Fija + Móvil",         "#059669", "#059669")
-            _kpi_card_html(_nk2, "Netas 3 Meses",  _val_netas_3m,                         _sub_netas_3m,                  "#0891b2", "#0891b2")
-            _kpi_card_html(_nk3, "Netas 6 Meses",  _val_netas_6m,                         _sub_netas_6m,                  "#0f4287", "#0f4287")
+            _kpi_card_html(_nk2, "Netas 3 Meses",  _val_n3m,                              _sub_n3m,                       "#0891b2", "#0891b2")
+            _kpi_card_html(_nk3, "Netas 6 Meses",  _val_n6m,                              _sub_n6m,                       "#0f4287", "#0f4287")
             _kpi_card_html(_nk4, "Comisión Total", formatear_moneda(_comision_total_npn), "Suma comisión pagadas",        "#7c3aed", "#7c3aed")
             _kpi_card_html(_nk5, "% TV",           f"{_pct_tv_npn:.2f}%",                f"{_ventas_tv_npn:,} pagadas con TV", "#7c3aed", "#7c3aed")
 
