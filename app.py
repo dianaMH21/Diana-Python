@@ -24,1166 +24,6 @@ def set_bg(img_file):
         st.sidebar.warning(f"Imagen no encontrada: {img_file}")
     st.markdown(f"""<style>
         .stApp {{ {bg} background-size:cover; background-position:center; background-attachment:fixed; }}
-        .stApp::before {{ content:""; position:fixed; inset:0;
-            background:linear-gradient(135deg,rgba(2,6,23,.48) 0%,rgba(10,26,68,.34) 50%,rgba(60,5,80,.30) 100%);
-            pointer-events:none; z-index:0; }}
-        .caratula-hero {{
-            position:relative; z-index:1; text-align:center;
-            padding:52px 24px 44px 24px;
-            background:linear-gradient(135deg,rgba(7,24,52,.84),rgba(15,66,135,.78) 52%,rgba(79,23,135,.76));
-            border-radius:30px; border:1px solid rgba(255,255,255,.16);
-            box-shadow:0 40px 100px rgba(2,8,23,.36),0 12px 36px rgba(15,66,135,.22);
-            backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
-            margin-bottom:30px; overflow:hidden;
-        }}
-        .caratula-hero::before {{
-            content:""; position:absolute; width:500px; height:500px;
-            right:-170px; top:-170px; border-radius:50%;
-            background:radial-gradient(circle,rgba(124,58,237,.20),transparent 70%);
-            pointer-events:none;
-        }}
-        .caratula-badge {{
-            display:inline-flex; align-items:center; gap:8px;
-            padding:8px 18px; border-radius:999px;
-            background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22);
-            color:rgba(255,255,255,.88); font-size:11px; font-weight:800;
-            letter-spacing:.16em; text-transform:uppercase; margin-bottom:20px;
-        }}
-        .main-title {{
-            text-align:center; color:white; font-weight:950; font-size:60px;
-            letter-spacing:-.04em; line-height:.96; margin-bottom:8px;
-            text-shadow:0 4px 32px rgba(37,99,235,.38);
-        }}
-        .title-accent {{ color:#bfdbfe; }}
-        .sub-title {{
-            text-align:center; font-weight:700; font-size:18px;
-            color:rgba(255,255,255,.78); margin-bottom:28px; letter-spacing:.01em;
-        }}
-        .caratula-divider {{
-            width:80px; height:3px; margin:0 auto 26px auto;
-            background:linear-gradient(90deg,#2563eb,#9333ea); border-radius:99px;
-        }}
-        .caratula-pills {{
-            display:flex; justify-content:center; gap:10px; flex-wrap:wrap;
-        }}
-        .caratula-pill {{
-            display:inline-flex; align-items:center; gap:6px;
-            padding:9px 16px; border-radius:13px;
-            background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18);
-            color:rgba(255,255,255,.82); font-size:12px; font-weight:750;
-        }}
-        .kpi-wrapper {{ display:flex; flex-direction:column; align-items:center; margin-top:20px; }}
-        .box-header-dc {{ background:linear-gradient(135deg,#0f4287,#2563eb); color:white; width:320px; padding:18px 22px; border-radius:22px; text-align:center; font-weight:900; font-size:16px; margin-bottom:18px; box-shadow:0 18px 40px rgba(15,66,135,.28); letter-spacing:.08em; text-transform:uppercase; }}
-        .box-header-tt {{ background:linear-gradient(135deg,#6d0b8c,#9333ea); color:white; width:320px; padding:18px 22px; border-radius:22px; text-align:center; font-weight:900; font-size:16px; margin-bottom:18px; box-shadow:0 18px 40px rgba(109,11,140,.28); letter-spacing:.08em; text-transform:uppercase; }}
-        .data-card-dc {{ background:rgba(255,255,255,.97); width:320px; padding:24px; border-radius:24px; border:2px solid #0f4287; text-align:center; margin-bottom:16px; box-shadow:0 16px 40px rgba(0,0,0,.10); }}
-        .data-card-tt {{ background:rgba(255,255,255,.97); width:320px; padding:24px; border-radius:24px; border:2px solid #6d0b8c; text-align:center; margin-bottom:16px; box-shadow:0 16px 40px rgba(0,0,0,.10); }}
-        .label {{ color:#4b5563; font-weight:800; font-size:13px; text-transform:uppercase; display:block; letter-spacing:.1em; margin-bottom:8px; }}
-        .value {{ color:#111827; font-size:42px; font-weight:900; display:block; line-height:1.05; }}
-        .section-title-dc {{ color:#004a99; font-size:38px; font-weight:900; margin-bottom:10px; }}
-        .section-title-tt {{ color:#70008f; font-size:38px; font-weight:900; margin-bottom:10px; }}
-        .small-subtitle-dc {{ color:#004a99; font-weight:800; font-size:18px; margin-bottom:10px; }}
-        .small-subtitle-tt {{ color:#70008f; font-weight:800; font-size:18px; margin-bottom:10px; }}
-        .block-filter {{ background:rgba(255,255,255,.92); padding:16px; border-radius:16px; border:1px solid #d9d9d9; margin-top:20px; margin-bottom:20px; backdrop-filter:blur(10px); }}
-        .stExpander {{ border-radius:12px !important; overflow:hidden; }}
-    </style>""", unsafe_allow_html=True)
-
-DATA_DIR = "."
-MESES_ES = {1:'Enero',2:'Febrero',3:'Marzo',4:'Abril',5:'Mayo',6:'Junio',
-            7:'Julio',8:'Agosto',9:'Septiembre',10:'Octubre',11:'Noviembre',12:'Diciembre'}
-MESES_MAP = {v.lower(): k for k, v in MESES_ES.items()}
-
-CSV_MAP = {
-    "dbo.CLARO_DC_FIJA":              "CLARO_DC_FIJA.csv",
-    "dbo.CLARO_DC_FIJA_SEGUNDA_CAIDA": "CLARO_DC_FIJA_SEGUNDA_CAIDA.csv",
-    "dbo.CLARO_TELETALK_FIJA":        "CLARO_TELETALK_FIJA.csv",
-    "dbo.CLARO_DC_MOVIL":             "CLARO_DC_MOVIL.csv",
-    "dbo.CLARO_TELETALK_MOVIL":       "CLARO_TELETALK_MOVIL.csv",
-    "[DATA DEVELZ].dbo.FIJA_DC":      "FIJA_DC.csv",
-    "[DATA DEVELZ].dbo.FIJA_TELETALK":"FIJA_TELETALK.csv",
-}
-
-TIPIS_ESTADO_MAP = {
-    "ATENDIDA/CONFORME":"Conforme","CONFORME PODIO":"Conforme","ATENDIDA - REASIGNACION":"Conforme",
-    "CONFORME":"Conforme","ATENDIDA/OBSERVADO":"Conforme","AUDIO LOTEADO":"Conforme",
-    "CONFORME - REASIGNACION":"Conforme","AUDIO KO":"1era Caída","SOT CON OTRO DAC":"1era Caída",
-    "SEC SIN CORRECCIÓN":"1era Caída","SEC SIN CORRECCION":"1era Caída","OTROS":"1era Caída",
-    "EDIFICIO NO LIBERADO PC":"1era Caída","SIN COBERTURA PC":"1era Caída","FICHA DUPLICADA":"1era Caída",
-    "SEC CON EXCLUSIVIDAD":"1era Caída","NO ADJUNTA SUSTENTO":"1era Caída","NO ENVIA SUSTENTO":"1era Caída",
-    "VENTA CARRUSEL":"1era Caída","DIRECCIÓN CON SERVICIO DE BAJA":"1era Caída",
-    "DIRECCION CON SERVICIO DE BAJA":"1era Caída","FACILIDADES TECNICAS":"2da Caída",
-    "CLIENTE NO DESEA":"2da Caída","FALTA CONTACTO":"2da Caída","CLIENTE NO CALIFICA":"2da Caída",
-    "PRUEBA - CANCELADA":"2da Caída","DIRECCION INCORRECTA":"2da Caída","DIRECCIÓN INCORRECTA":"2da Caída",
-    "MALA OFERTA":"2da Caída","RED SATURADA":"2da Caída","FRAUDE":"2da Caída","VIAJE O MUDANZA":"2da Caída",
-    "CONTRA OFERTA":"2da Caída","FALTA INFRAESTRUCTURA":"2da Caída","EDIFICIO NO LIBERADO":"2da Caída",
-    "EJECUCION - AUDIO LOTEADO":"Ejecución","EJECUCION - AUDIO CONFORME":"Ejecución",
-    "PENDIENTE AUDIO OK":"Ejecución","EJECUCION":"Ejecución","EJECUCION - SIN AUDIO":"Ejecución",
-    "PENDIENTE SOT":"Ejecución","PENDIENTE AUDIO KO":"Ejecución","EJECUCION - AUDIO OBSERVADO":"Ejecución",
-    "PENDIENTE PRE - AUDITORIA":"Ejecución","EJECUCION - REASIGNACION":"Ejecución",
-    "EJECUCION - AUDITADO":"Ejecución",
-}
-
-ruta_base    = "."
-img_caratula_png = os.path.join(ruta_base, "caratula.png")
-img_caratula_jpg = os.path.join(ruta_base, "caratula.png.jpg")
-img_caratula = img_caratula_png if os.path.exists(img_caratula_png) else img_caratula_jpg
-img_dc       = os.path.join(ruta_base, "34bab75f-2b2e-455e-8935-377abf566b76.jpg")
-img_tt       = os.path.join(ruta_base, "ab3ac40e-1612-430f-bb3a-817d24b709db.jpg")
-
-# ─────────────────────────────────────────────────────────────────────────
-# DVZ.csv unificado: reemplaza a FIJA_DC.csv, FIJA_TELETALK.csv,
-# MOVIL_DC.csv y MOVIL_TELETALK.csv. Se identifica:
-#   - FIJA vs MOVIL  -> columna "Tipo Producto" (valores "FIJA" / "MOVIL")
-#   - D&C vs Teletalk -> columna "Datos Adicionales - Clip" (valores "D&C" / "TELETALK")
-# Si DVZ.csv no existe, se conserva el comportamiento original (4 archivos sueltos).
-# ─────────────────────────────────────────────────────────────────────────
-_DVZ_SPLIT_MAP = {
-    "FIJA_DC.csv":       ("FIJA",  "D&C"),
-    "FIJA_TELETALK.csv": ("FIJA",  "TELETALK"),
-    "MOVIL_DC.csv":      ("MOVIL", "D&C"),
-    "MOVIL_TELETALK.csv":("MOVIL", "TELETALK"),
-}
-
-@st.cache_data(ttl=600)
-def _leer_dvz_crudo():
-    ruta = os.path.join(DATA_DIR, "DVZ.csv")
-    if not os.path.exists(ruta):
-        return pd.DataFrame()
-    for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
-        for sep in [";",",","\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
-                df.columns = df.columns.str.strip()
-                if len(df.columns) > 1: return df
-            except UnicodeDecodeError:
-                continue
-            except Exception:
-                continue
-    return pd.DataFrame()
-
-@st.cache_data(ttl=600)
-def _cargar_dvz_filtrado(nombre):
-    tipo_prod, canal_clip = _DVZ_SPLIT_MAP[nombre]
-    df = _leer_dvz_crudo()
-    if df.empty:
-        return df
-    col_tipo = next((c for c in df.columns if c.strip().lower() == "tipo producto"), None)
-    col_clip = next((c for c in df.columns if c.strip().lower() == "datos adicionales - clip"), None)
-    if not col_tipo or not col_clip:
-        return pd.DataFrame()
-    mask_tipo = df[col_tipo].fillna("").astype(str).str.strip().str.upper() == tipo_prod
-    mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == canal_clip
-    return df[mask_tipo & mask_clip].copy()
-
-@st.cache_data(ttl=600)
-def cargar_csv(nombre):
-    # Interceptar los 4 archivos antiguos -> leer desde DVZ.csv si existe
-    if nombre in _DVZ_SPLIT_MAP and os.path.exists(os.path.join(DATA_DIR, "DVZ.csv")):
-        df_dvz = _cargar_dvz_filtrado(nombre)
-        if not df_dvz.empty:
-            return df_dvz
-    ruta = os.path.join(DATA_DIR, nombre)
-    for enc in ["latin-1","utf-8-sig","utf-8","cp1252","iso-8859-1"]:
-        for sep in [";",",","\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
-                df.columns = df.columns.str.strip()
-                if len(df.columns) > 1: return df
-            except FileNotFoundError:
-                st.warning(f"Archivo no encontrado: {ruta}")
-                return pd.DataFrame()
-            except UnicodeDecodeError:
-                continue
-            except Exception:
-                continue
-    st.error(f"No se pudo leer {nombre}")
-    return pd.DataFrame()
-
-def get_tabla(nombre):
-    return cargar_csv(CSV_MAP.get(nombre, nombre.split(".")[-1] + ".csv"))
-
-def preparar_fechas_fija(df):
-    for col in ["FECHA INSTALACION", "FECHA GENERACION", "FECHA DE VENTA"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
-    return df
-
-def preparar_fechas_movil(df):
-    for col in ["FECHA OPERACION", "FECHA CARGA", "FECHA DE VENTA", "FECHA VENTA", "Fecha de Venta", "Fecha Venta"]:
-        if col not in df.columns: continue
-        serie = df[col].astype(str).str.strip()
-        es_iso = serie.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
-        es_lat = serie.str.match(r"^\d{1,2}/\d{1,2}/\d{4}$", na=False)
-        fechas = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
-        if es_iso.any(): fechas.loc[es_iso] = pd.to_datetime(serie.loc[es_iso], format="%Y-%m-%d", errors="coerce")
-        if es_lat.any(): fechas.loc[es_lat] = pd.to_datetime(serie.loc[es_lat], dayfirst=True, errors="coerce")
-        otros = ~(es_iso | es_lat)
-        if otros.any(): fechas.loc[otros] = pd.to_datetime(serie.loc[otros], errors="coerce", dayfirst=True)
-        df[col] = fechas
-    return df
-
-def encontrar_columna(df, posibles):
-    return next((n for n in posibles if n in df.columns), None)
-
-def obtener_comision_fija(df):
-    col = encontrar_columna(df, ["COMISION","COMISIÓN","Comision","Comisión","comision","comisión","COMIS","MONTO"])
-    return pd.to_numeric(df[col], errors="coerce").fillna(0) if col else pd.Series([0.0]*len(df))
-
-def obtener_comision_movil(df):
-    col = encontrar_columna(df, ["COMISION TOTAL","COMISIÓN TOTAL","Comision Total","COMISION","MONTO"])
-    return pd.to_numeric(df[col], errors="coerce").fillna(0) if col else pd.Series([0.0]*len(df))
-
-def formatear_moneda(v):
-    try: return f"S/ {float(v):,.2f}"
-    except: return "S/ 0.00"
-
-# =========================================================
-# AUDITORÍA DE DESCARGAS
-# =========================================================
-def registrar_descarga(seccion, archivo, filtros=""):
-    try:
-        from datetime import datetime
-        log_file = os.path.join(DATA_DIR, "log_descargas.csv")
-        nuevo = pd.DataFrame([{"fecha_hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "usuario": st.session_state.get("usuario_logueado","Sin usuario"),
-            "seccion": seccion, "archivo": archivo, "filtros": filtros, "accion": "DESCARGA"}])
-        final = pd.concat([pd.read_csv(log_file, encoding="utf-8-sig"), nuevo], ignore_index=True) if os.path.exists(log_file) else nuevo
-        final.to_csv(log_file, index=False, encoding="utf-8-sig")
-    except Exception as e:
-        print(f"Error registrando descarga: {e}")
-
-def mostrar_auditoria_descargas():
-    set_bg(img_caratula)
-    st.markdown('<div class="section-title-dc">Auditoria de Descargas</div>', unsafe_allow_html=True)
-    st.write("---")
-    if st.session_state.get("usuario_logueado","") != "Fiorella":
-        st.error("Acceso restringido."); return
-    log_file = os.path.join(DATA_DIR, "log_descargas.csv")
-    if not os.path.exists(log_file): st.info("No hay descargas registradas."); return
-    df_log = pd.read_csv(log_file, encoding="utf-8-sig")
-    if df_log.empty: st.info("No hay descargas registradas."); return
-    df_log["fecha_hora"] = pd.to_datetime(df_log["fecha_hora"], errors="coerce")
-    df_log = df_log.sort_values("fecha_hora", ascending=False)
-    ult = df_log["fecha_hora"].max().strftime("%d/%m/%Y %H:%M:%S") if df_log["fecha_hora"].notna().any() else "Sin fecha"
-    c1,c2,c3 = st.columns(3)
-    _kpi_card_html(c1,"Total Descargas",f"{len(df_log):,}","Historico","#0f4287","#0f4287")
-    _kpi_card_html(c2,"Usuarios",f"{df_log['usuario'].nunique() if 'usuario' in df_log.columns else 0:,}","Con actividad","#0f4287","#0f4287")
-    _kpi_card_html(c3,"Ultima Descarga",ult,"Mas reciente","#0f4287","#0f4287")
-    st.write("---")
-    f1,f2 = st.columns(2)
-    with f1: filtro_usuario = st.selectbox("Usuario", (["Todos"]+sorted(df_log["usuario"].dropna().astype(str).unique().tolist())) if "usuario" in df_log.columns else ["Todos"], key="audit_usuario")
-    with f2: filtro_seccion = st.selectbox("Seccion",  (["Todas"]+sorted(df_log["seccion"].dropna().astype(str).unique().tolist())) if "seccion"  in df_log.columns else ["Todas"], key="audit_seccion")
-    df_show = df_log.copy()
-    if filtro_usuario != "Todos" and "usuario" in df_show.columns: df_show = df_show[df_show["usuario"].astype(str)==filtro_usuario]
-    if filtro_seccion != "Todas" and "seccion"  in df_show.columns: df_show = df_show[df_show["seccion"].astype(str)==filtro_seccion]
-    df_show["fecha_hora"] = df_show["fecha_hora"].dt.strftime("%d/%m/%Y %H:%M:%S")
-    st.dataframe(df_show, use_container_width=True, height=480)
-    st.download_button("Descargar historial", data=df_log.to_csv(index=False,encoding="utf-8-sig").encode("utf-8-sig"),
-        file_name="auditoria_descargas.csv", mime="text/csv", key="dl_auditoria_descargas")
-
-def parse_mes_anio(txt):
-    if not txt or txt == "Todos los meses": return None, None
-    p = txt.strip().lower().split()
-    if len(p) == 2 and p[0] in MESES_MAP and p[1].isdigit(): return MESES_MAP[p[0]], int(p[1])
-    return None, None
-
-def filtrar_por_mes_anio(df, col, txt):
-    m, y = parse_mes_anio(txt)
-    if m and y and col in df.columns: return df[(df[col].dt.month == m) & (df[col].dt.year == y)].copy()
-    return df.copy()
-
-def porta_si(serie):
-    return serie.str.upper().str.strip().str.replace('Í','I',regex=False).isin(['SI','YES','Y'])
-
-def _es_portabilidad_movil(serie):
-    return serie.str.upper().str.strip().str.replace('Í','I',regex=False) == "PORTABILIDAD"
-
-def _es_alta_movil(serie):
-    return serie.str.upper().str.strip().str.replace('Í','I',regex=False).isin(["ALTA NUEVA","ALTA"])
-
-@st.cache_data(ttl=3600)
-def obtener_meses_fija(col):
-    meses = set()
-    for nombre in ["CLARO_DC_FIJA.csv","CLARO_TELETALK_FIJA.csv"]:
-        df = preparar_fechas_fija(cargar_csv(nombre))
-        if col in df.columns:
-            meses.update(f"{MESES_ES[f.month].capitalize()} {f.year}" for f in df[col].dropna())
-    return (["Todos los meses"] +
-            sorted(meses, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))))
-
-@st.cache_data(ttl=3600)
-def obtener_meses_fija_develz(col):
-    meses = set()
-    for nombre in ["FIJA_DC.csv", "FIJA_TELETALK.csv"]:
-        df = preparar_fechas_fija(cargar_csv(nombre))
-        if col in df.columns:
-            meses.update(f"{MESES_ES[f.month].capitalize()} {f.year}" for f in df[col].dropna())
-    return (["Todos los meses"] +
-            sorted(meses, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))))
-
-@st.cache_data(ttl=3600)
-def obtener_meses_movil(col, archivos):
-    meses = set()
-    for a in archivos:
-        df = preparar_fechas_movil(cargar_csv(a))
-        if col in df.columns:
-            meses.update(f"{MESES_ES[f.month].lower()} {f.year}".capitalize()
-                         for f in df[df[col].notna()][col])
-    return (["Todos los meses"] +
-            sorted(meses, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))))
-
-@st.cache_data(ttl=3600)
-def obtener_metricas_fija(tabla, f_inst, f_gene):
-    try:
-        df = preparar_fechas_fija(get_tabla(tabla))
-        if df.empty: return 0, 0.0
-        if f_inst != "Todos los meses": df = filtrar_por_mes_anio(df, "FECHA INSTALACION", f_inst)
-        if f_gene != "Todos los meses": df = filtrar_por_mes_anio(df, "FECHA GENERACION", f_gene)
-        return int(df["SOT"].nunique() if "SOT" in df.columns else 0), float(obtener_comision_fija(df).sum())
-    except: return 0, 0.0
-
-@st.cache_data(ttl=3600)
-def obtener_reporte_liquidado(ventas_tabla, maestro_tabla, fecha_inst):
-    cols = ["SOT","ASESOR","Nombre del Cliente","COMISION","COMISIONES","¿Pagado?"]
-    try:
-        df_v = preparar_fechas_fija(get_tabla(ventas_tabla))
-        df_m = get_tabla(maestro_tabla)
-        if df_v.empty: return pd.DataFrame(columns=cols)
-        df_v = filtrar_por_mes_anio(df_v, "FECHA INSTALACION", fecha_inst)
-        df_v["SOT"] = df_v["SOT"].astype(str).str.strip()
-        if not df_m.empty and "Back Office - Sot" in df_m.columns:
-            df_m["Back Office - Sot"] = df_m["Back Office - Sot"].astype(str).str.strip()
-            df = df_v.merge(df_m, left_on="SOT", right_on="Back Office - Sot", how="left")
-        else:
-            df = df_v.copy()
-        df["ASESOR"] = df.get("USUARIO", pd.Series([""] * len(df))).replace("", pd.NA).fillna("Sin Asesor")
-        nom = df.get("Cliente - Nombre", pd.Series([""] * len(df))).fillna("").astype(str).str.strip()
-        ape = df.get("Cliente - Apellido Paterno", pd.Series([""] * len(df))).fillna("").astype(str).str.strip()
-        df["Nombre del Cliente"] = (nom + " " + ape).str.strip().replace("", "Sin Datos").fillna("Sin Datos")
-        df["COMISION"] = obtener_comision_fija(df)
-        df["¿Pagado?"] = df["COMISION"].apply(lambda x: "SÍ" if x > 0 else "NO")
-        return df[cols]
-    except Exception as e:
-        st.error(f"Error reporte liquidado: {e}")
-        return pd.DataFrame(columns=cols)
-
-def _base_factor_fija(df, col_fecha):
-    df["COMISION"] = obtener_comision_fija(df)
-    df["_porta"] = porta_si(df.get("PORTABILIDAD", pd.Series([""] * len(df))).fillna("").astype(str))
-    srv = df.get("SERVICIO", pd.Series([""] * len(df))).fillna("").astype(str).str.upper()
-    tip = df.get("TIPO TRABAJO", pd.Series([""] * len(df))).fillna("").astype(str).str.upper()
-    df["_ftth"] = srv.str.contains("FTTH") | tip.str.contains("FTTH")
-    df["_hfc"]  = srv.str.contains("HFC")  | tip.str.contains("HFC")
-    df["_anio"] = df[col_fecha].dt.year
-    df["_mes"]  = df[col_fecha].dt.month
-    return df
-
-@st.cache_data(ttl=3600)
-def obtener_factor_fija_resumen(tabla, col_fecha, filtro):
-    cols = ["Año","Mes","Ventas","PORTABILIDAD SI","PORTABILIDAD NO","FTTH","HFC","S/."]
-    try:
-        df = preparar_fechas_fija(get_tabla(tabla))
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = filtrar_por_mes_anio(df, col_fecha, filtro)
-        df = _base_factor_fija(df, col_fecha)
-        ds = df.drop_duplicates(subset=["SOT","_anio","_mes"])
-        grp = ds.groupby(["_anio","_mes"]).agg(
-            Ventas=("SOT","nunique"), **{"PORTABILIDAD SI":("_porta","sum")},
-            **{"PORTABILIDAD NO":("_porta", lambda x: (~x).sum())},
-            FTTH=("_ftth","sum"), HFC=("_hfc","sum"),
-        ).reset_index()
-        com = df.groupby(["_anio","_mes"])["COMISION"].sum().reset_index()
-        com.columns = ["_anio","_mes","S/."]
-        grp = grp.merge(com, on=["_anio","_mes"], how="left")
-        grp.columns = ["Año","MesNum","Ventas","PORTABILIDAD SI","PORTABILIDAD NO","FTTH","HFC","S/."]
-        grp["Mes"] = grp["MesNum"].map(MESES_ES)
-        return grp.sort_values(["Año","MesNum"])[cols]
-    except Exception as e:
-        st.error(f"Error factor fija resumen: {e}")
-        return pd.DataFrame(columns=cols)
-
-@st.cache_data(ttl=3600)
-def obtener_factor_fija_detallado(tabla, col_fecha, filtro):
-    cols = ["Año","Mes","MesNum","Dia","Ventas","Porta_SI","Porta_NO","FTTH","HFC","Monto"]
-    try:
-        df = preparar_fechas_fija(get_tabla(tabla))
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = filtrar_por_mes_anio(df, col_fecha, filtro)
-        df = _base_factor_fija(df, col_fecha)
-        df["_dia"] = df[col_fecha].dt.day
-        ds = df.drop_duplicates(subset=["SOT","_anio","_mes","_dia"])
-        grp = ds.groupby(["_anio","_mes","_dia"]).agg(
-            Ventas=("SOT","nunique"), Porta_SI=("_porta","sum"),
-            Porta_NO=("_porta", lambda x: (~x).sum()), FTTH=("_ftth","sum"), HFC=("_hfc","sum"),
-        ).reset_index()
-        com = df.groupby(["_anio","_mes","_dia"])["COMISION"].sum().reset_index()
-        com.columns = ["_anio","_mes","_dia","Monto"]
-        grp = grp.merge(com, on=["_anio","_mes","_dia"], how="left")
-        grp.columns = ["Año","MesNum","Dia","Ventas","Porta_SI","Porta_NO","FTTH","HFC","Monto"]
-        grp["Mes"] = grp["MesNum"].map(MESES_ES)
-        return grp.sort_values(["Año","MesNum","Dia"], ascending=[False,False,True])[cols]
-    except Exception as e:
-        st.error(f"Error factor fija detallado: {e}")
-        return pd.DataFrame(columns=cols)
-
-def _base_factor_movil(df, col_fecha):
-    df["_comision"] = obtener_comision_movil(df)
-    tr = df.get("TRANSACCION", pd.Series([""] * len(df), index=df.index)).fillna("").astype(str)
-    df["_porta"] = _es_portabilidad_movil(tr)
-    df["_alta"]  = _es_alta_movil(tr)
-    cf   = pd.to_numeric(df.get("CF",   pd.Series([0.0]*len(df), index=df.index)), errors="coerce").fillna(0)
-    dias = pd.to_numeric(df.get("DIAS PORTADAS", pd.Series([0.0]*len(df), index=df.index)), errors="coerce").fillna(0)
-    df["_cf_mayor"]   = cf > 69.90;   df["_cf_menor"]   = cf <= 69.90
-    df["_dias_mayor"] = dias > 90;    df["_dias_menor"]  = dias <= 90
-    df["_anio"] = df[col_fecha].dt.year.astype("Int64")
-    df["_mes"]  = df[col_fecha].dt.month.astype("Int64")
-    return df
-
-@st.cache_data(ttl=3600)
-def obtener_factor_movil_resumen(tabla, filtro, col_fecha):
-    cols = ["Año","Mes","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","S/."]
-    try:
-        df = preparar_fechas_movil(get_tabla(tabla))
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = filtrar_por_mes_anio(df, col_fecha, filtro)
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = _base_factor_movil(df, col_fecha)
-        grp = df.groupby(["_anio","_mes"]).agg(
-            Ventas=("TRANSACCION","size"), PORTABILIDAD=("_porta","sum"), ALTA=("_alta","sum"),
-            **{"CF>69.90":("_cf_mayor","sum")}, **{"CF<=69.90":("_cf_menor","sum")},
-            **{"Dias>90":("_dias_mayor","sum")}, **{"Dias<=90":("_dias_menor","sum")},
-            **{"S/.":("_comision","sum")},
-        ).reset_index()
-        grp.columns = ["Año","MesNum","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","S/."]
-        grp["Mes"] = grp["MesNum"].map(MESES_ES)
-        int_cols = ["Año","MesNum","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90"]
-        for c in int_cols: grp[c] = pd.to_numeric(grp[c], errors="coerce").fillna(0).astype(int)
-        return grp.sort_values(["Año","MesNum"])[cols]
-    except Exception as e:
-        st.error(f"Error factor móvil resumen: {e}")
-        return pd.DataFrame(columns=cols)
-
-@st.cache_data(ttl=3600)
-def obtener_factor_movil_detallado(tabla, filtro, col_fecha):
-    cols = ["Año","Mes","MesNum","Dia","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","Monto"]
-    try:
-        df = preparar_fechas_movil(get_tabla(tabla))
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = filtrar_por_mes_anio(df, col_fecha, filtro)
-        if df.empty: return pd.DataFrame(columns=cols)
-        df = _base_factor_movil(df, col_fecha)
-        df["_dia"] = df[col_fecha].dt.day.astype("Int64")
-        grp = df.groupby(["_anio","_mes","_dia"]).agg(
-            Ventas=("TRANSACCION","size"), PORTABILIDAD=("_porta","sum"), ALTA=("_alta","sum"),
-            **{"CF>69.90":("_cf_mayor","sum")}, **{"CF<=69.90":("_cf_menor","sum")},
-            **{"Dias>90":("_dias_mayor","sum")}, **{"Dias<=90":("_dias_menor","sum")},
-            Monto=("_comision","sum"),
-        ).reset_index()
-        grp.columns = ["Año","MesNum","Dia","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","Monto"]
-        grp["Mes"] = grp["MesNum"].map(MESES_ES)
-        int_cols = ["Año","MesNum","Dia","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90"]
-        for c in int_cols: grp[c] = pd.to_numeric(grp[c], errors="coerce").fillna(0).astype(int)
-        return grp.sort_values(["Año","MesNum","Dia"], ascending=[False,False,True])[cols]
-    except Exception as e:
-        st.error(f"Error factor móvil detallado: {e}")
-        return pd.DataFrame(columns=cols)
-
-def construir_ranking_asesores(df):
-    if df.empty: return pd.DataFrame(columns=["Rank","ASESOR","Cantidad_Ventas","Ventas_Pagadas","Ventas_No_Pagadas","Total_Comision"])
-    df = df.copy()
-    cn = df["COMISIONES"].astype(str).str.upper().str.replace('Í','I',regex=False).str.strip()
-    df["_cn"] = cn
-    r = (df.groupby("ASESOR", dropna=False).agg(
-        Total_Comision=("COMISION","sum"),
-        Ventas_Pagadas=("SOT", lambda x: x[df.loc[x.index,"_cn"] == "SI"].nunique()),
-        Ventas_No_Pagadas=("SOT", lambda x: x[df.loc[x.index,"_cn"] == "NO"].nunique()),
-    ).reset_index().sort_values("Total_Comision", ascending=False))
-    r["Rank"] = r["Total_Comision"].rank(method="dense", ascending=False).astype(int)
-    r["Cantidad_Ventas"] = r["Ventas_Pagadas"] + r["Ventas_No_Pagadas"]
-    r = r[["Rank","ASESOR","Cantidad_Ventas","Ventas_Pagadas","Ventas_No_Pagadas","Total_Comision"]]
-    total = pd.DataFrame([{"Rank":"Total","ASESOR":"","Cantidad_Ventas":r["Cantidad_Ventas"].sum(),
-        "Ventas_Pagadas":r["Ventas_Pagadas"].sum(),"Ventas_No_Pagadas":r["Ventas_No_Pagadas"].sum(),
-        "Total_Comision":r["Total_Comision"].sum()}])
-    return pd.concat([r, total], ignore_index=True)
-
-def mostrar_tabla_ranking(ranking):
-    if ranking.empty: st.warning("No se encontraron datos para el ranking."); return
-    st.table(ranking.style.format({"Total_Comision":"S/ {:,.2f}"})
-        .set_table_attributes('style="width:1000px;table-layout:fixed;background-color:white;"')
-        .set_table_styles([
-            {"selector":"th","props":[("text-align","center"),("font-size","14px"),("padding","8px"),("background-color","white")]},
-            {"selector":"td","props":[("padding","8px"),("font-size","13px"),("white-space","nowrap"),("overflow","hidden"),("text-overflow","ellipsis"),("background-color","white")]},
-        ])
-        .set_properties(**{"text-align":"center"}, subset=["Rank","Cantidad_Ventas","Ventas_Pagadas","Ventas_No_Pagadas","Total_Comision"])
-        .set_properties(**{"text-align":"left"}, subset=["ASESOR"]))
-
-def _style_tabla(color):
-    hc = "#0f4287" if color == "dc" else "#70008f"
-    return [
-        {"selector":"th","props":[("background-color","white"),("color",hc),("font-size","13px"),("text-align","center"),("border-bottom","2px solid #ddd")]},
-        {"selector":"td","props":[("padding","10px 8px"),("font-size","13px"),("border-bottom","1px solid #eee"),("background-color","white")]}
-    ]
-
-def mostrar_expanders_fija(df_det, color="dc"):
-    if df_det.empty: st.warning("No se encontraron datos."); return
-    icono = "🔵" if color == "dc" else "🟣"
-    for _, p in (df_det[["Año","Mes","MesNum"]].drop_duplicates()
-                 .sort_values(["Año","MesNum"], ascending=[False,False])).iterrows():
-        dm = df_det[(df_det["Año"] == p["Año"]) & (df_det["Mes"] == p["Mes"])].copy()
-        with st.expander(f"{icono} {p['Mes']} {p['Año']}  |  Ventas: {int(dm['Ventas'].sum())}  |  Total: {formatear_moneda(dm['Monto'].sum())}", expanded=False):
-            t = dm[["Dia","Ventas","Porta_SI","Porta_NO","FTTH","HFC","Monto"]].copy()
-            t["Monto"] = t["Monto"].map(formatear_moneda)
-            st.table(t)
-
-def mostrar_expanders_movil(df_det, color="dc"):
-    if df_det.empty: st.warning("No se encontraron datos."); return
-    icono = "🔵" if color == "dc" else "🟣"
-    for _, p in (df_det[["Año","Mes","MesNum"]].drop_duplicates()
-                 .sort_values(["Año","MesNum"], ascending=[False,False])).iterrows():
-        dm = df_det[(df_det["Año"] == p["Año"]) & (df_det["Mes"] == p["Mes"])].copy()
-        with st.expander(f"{icono} {p['Mes']} {p['Año']}  |  Ventas: {int(dm['Ventas'].sum())}  |  Total: {formatear_moneda(dm['Monto'].sum())}", expanded=False):
-            t = dm[["Dia","Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","Monto"]].copy()
-            t["Monto"] = t["Monto"].map(formatear_moneda)
-            st.table(t)
-
-def mostrar_factor_fija(tabla, col_fecha, filtro, color):
-    col1, col2 = st.columns([1.1, 1.6])
-    with col1:
-        st.markdown("### Resumen")
-        df_f = obtener_factor_fija_resumen(tabla, col_fecha, filtro)
-        if df_f.empty: st.warning("Sin datos.")
-        else:
-            total = pd.DataFrame([{"Año":"Total","Mes":"","Ventas":df_f["Ventas"].sum(),
-                "PORTABILIDAD SI":df_f["PORTABILIDAD SI"].sum(),"PORTABILIDAD NO":df_f["PORTABILIDAD NO"].sum(),
-                "FTTH":df_f["FTTH"].sum(),"HFC":df_f["HFC"].sum(),"S/.":df_f["S/."].sum()}])
-            d = pd.concat([df_f, total], ignore_index=True)
-            d["S/."] = d["S/."].map(formatear_moneda)
-            st.table(d.style.set_table_styles(_style_tabla(color))
-                .set_properties(subset=["Año","Mes"], **{"text-align":"left"})
-                .set_properties(subset=["Ventas","PORTABILIDAD SI","PORTABILIDAD NO","FTTH","HFC","S/."], **{"text-align":"center"}))
-    with col2:
-        st.markdown("### Detalle desplegable")
-        mostrar_expanders_fija(obtener_factor_fija_detallado(tabla, col_fecha, filtro), color=color)
-
-def mostrar_factor_movil(tabla, col_fecha, filtro, color):
-    col1, col2 = st.columns([1.2, 1.6])
-    with col1:
-        st.markdown("### Resumen")
-        df_r = obtener_factor_movil_resumen(tabla, filtro, col_fecha)
-        if df_r.empty: st.warning("Sin datos.")
-        else:
-            total = pd.DataFrame([{"Año":"Total","Mes":"","Ventas":df_r["Ventas"].sum(),
-                "PORTABILIDAD":df_r["PORTABILIDAD"].sum(),"ALTA":df_r["ALTA"].sum(),
-                "CF>69.90":df_r["CF>69.90"].sum(),"CF<=69.90":df_r["CF<=69.90"].sum(),
-                "Dias>90":df_r["Dias>90"].sum(),"Dias<=90":df_r["Dias<=90"].sum(),"S/.":df_r["S/."].sum()}])
-            d = pd.concat([df_r, total], ignore_index=True)
-            d["S/."] = d["S/."].map(formatear_moneda)
-            st.table(d.style.set_table_styles(_style_tabla(color))
-                .set_properties(subset=["Año","Mes"], **{"text-align":"left"})
-                .set_properties(subset=["Ventas","PORTABILIDAD","ALTA","CF>69.90","CF<=69.90","Dias>90","Dias<=90","S/."], **{"text-align":"center"}))
-    with col2:
-        st.markdown("### Detalle desplegable")
-        mostrar_expanders_movil(obtener_factor_movil_detallado(tabla, filtro, col_fecha), color=color)
-
-def mostrar_iae_movil(tabla, col_fecha, filtro, key_asesor, color):
-    df_m = preparar_fechas_movil(get_tabla(tabla))
-    df_m = filtrar_por_mes_anio(df_m, col_fecha, filtro)
-    if df_m.empty: st.warning("Sin datos."); return
-    df_m["_comision"] = obtener_comision_movil(df_m)
-    tr = df_m.get("TRANSACCION", pd.Series([""] * len(df_m))).fillna("").astype(str)
-    df_m["_porta"] = _es_portabilidad_movil(tr)
-    df_m["_alta"]  = _es_alta_movil(tr)
-    col_a = encontrar_columna(df_m, ["USUARIO","ASESOR","VENDEDOR","DISTRIBUIDOR"])
-    df_m["ASESOR"] = df_m[col_a].fillna("Sin Asesor") if col_a else "Sin Asesor"
-    filtro_a = st.selectbox("Selecciona Asesor", ["Todos"] + sorted(df_m["ASESOR"].unique().tolist()), key=key_asesor)
-    df_f = df_m[df_m["ASESOR"] == filtro_a].copy() if filtro_a != "Todos" else df_m.copy()
-    st.markdown("### Ranking de Asesores")
-    r = (df_f.groupby("ASESOR").agg(
-        Total_Ventas=("_porta", lambda x: len(x)), Portabilidades=("_porta","sum"),
-        Altas=("_alta","sum"), Comision_Total=("_comision","sum"),
-    ).reset_index().sort_values("Comision_Total", ascending=False))
-    r["Rank"] = r["Comision_Total"].rank(method="dense", ascending=False).astype(int)
-    r = r[["Rank","ASESOR","Total_Ventas","Portabilidades","Altas","Comision_Total"]]
-    total = pd.DataFrame([{"Rank":"Total","ASESOR":"","Total_Ventas":r["Total_Ventas"].sum(),
-        "Portabilidades":r["Portabilidades"].sum(),"Altas":r["Altas"].sum(),"Comision_Total":r["Comision_Total"].sum()}])
-    st.table(pd.concat([r, total], ignore_index=True).style.format({"Comision_Total":"S/ {:,.2f}"})
-        .set_properties(**{"text-align":"center"}).set_properties(subset=["ASESOR"], **{"text-align":"left"}))
-
-def _normalizar_texto(txt):
-    return str(txt).upper().strip().replace("Í","I").replace("Á","A").replace("É","E").replace("Ó","O").replace("Ú","U")
-
-def _estado_desde_tipis(tipis_txt):
-    return TIPIS_ESTADO_MAP.get(_normalizar_texto(tipis_txt), "Otros")
-
-def _normalizar_sot_series(serie):
-    """
-    Normaliza SOT para cruces entre DEVELZ y CLARO.
-    Corrige casos como:
-    - 87274852.0  -> 87274852
-    - 87274852    -> 87274852
-    - espacios invisibles / caracteres raros
-    - valores nulos
-    - SOT con guiones o separadores
-
-    IMPORTANTE:
-    Esta función se usa para mostrar la SOT limpia.
-    Para comparar de forma más agresiva se usa _sot_key_series().
-    """
-    s = serie.fillna("").astype(str).str.strip()
-    s = s.str.replace("\\u00a0", "", regex=False)
-    s = s.str.replace("\ufeff", "", regex=False)
-    s = s.str.replace(r"\s+", "", regex=True)
-    s = s.str.replace(r"\.0+$", "", regex=True)
-    s = s.str.replace(r"^'", "", regex=True)
-    s = s.replace(["nan","NaN","None","NONE","null","NULL","NaT","<NA>"], "")
-    return s
-
-def _sot_key_series(serie):
-    """
-    Llave técnica SOLO para cruces SOT.
-    Evita falsos faltantes cuando una base trae la SOT como texto, número,
-    decimal, con espacios, guiones o caracteres invisibles.
-
-    Ejemplos que quedan iguales:
-    - 87274852
-    - 87274852.0
-    - 87 274 852
-    - 87-274-852
-    """
-    s = _normalizar_sot_series(serie)
-    s = s.str.replace(r"[^0-9]", "", regex=True)
-    s = s.str.lstrip("0")
-    return s.replace(["nan","NaN","None","NONE","null","NULL","NaT","<NA>"], "")
-
-# --- Obtención de campos DEVELZ ---
-def _obtener_sot_develz(df):
-    col = encontrar_columna(df, ["Back Office - Sot","Back Office - SOT","SOT","sot","Sot"])
-    return df[col].fillna("").astype(str).str.strip() if col else pd.Series([""] * len(df), index=df.index)
-
-def _obtener_fecha_inst_develz(df):
-    col = encontrar_columna(df, ["Back Office - Fecha Instalacion","Back Office - Fecha Instalación",
-                                  "FECHA INSTALACION","Fecha Instalacion","Fecha Instalación"])
-    return pd.to_datetime(df[col], errors="coerce", dayfirst=True) if col else pd.Series(pd.NaT, index=df.index)
-
-def _obtener_fecha_venta_develz(df):
-    col = encontrar_columna(df, ["FECHA DE VENTA", "Fecha de Venta", "Fecha Venta", "FECHA VENTA",
-                                  "Back Office - Fecha de Venta", "Back Office - Fecha Venta",
-                                  "FECHA GENERACION", "Fecha Generacion", "Fecha Generación"])
-    return pd.to_datetime(df[col], errors="coerce", dayfirst=True) if col else pd.Series(pd.NaT, index=df.index)
-
-def _obtener_supervisor_develz(df):
-    col = encontrar_columna(df, ["Datos Adicionales - Supervisor","Datos adicionales - Supervisor",
-                                  "SUPERVISOR","Supervisor","supervisor","USUARIO","Usuario"])
-    return (df[col].fillna("Sin Supervisor").astype(str).str.strip().replace("","Sin Supervisor")
-            if col else pd.Series(["Sin Supervisor"] * len(df), index=df.index))
-
-def _obtener_asesor_creador_develz(df):
-    col = encontrar_columna(df, ["CREADOR","Creador","creador","Usuario Creador","USUARIO CREADOR",
-                                  "Datos Adicionales - Creador","Datos adicionales - Creador"])
-    return (df[col].fillna("Sin Asesor").astype(str).str.strip().replace("","Sin Asesor")
-            if col else pd.Series(["Sin Asesor"] * len(df), index=df.index))
-
-def _obtener_nombre_cliente_develz(df):
-    def _col(posibles): return encontrar_columna(df, posibles)
-    def _get(posibles, defecto=""):
-        c = _col(posibles); return df[c].fillna("").astype(str).str.strip() if c else pd.Series([defecto]*len(df),index=df.index)
-    nom     = _get(["Cliente - Nombre","NOMBRE","Nombre","CLIENTE"])
-    ape_pat = _get(["Cliente - Apellido Paterno","Apellido Paterno","APELLIDO PATERNO"])
-    ape_mat = _get(["Cliente - Apellido Materno","Apellido Materno","APELLIDO MATERNO"])
-    return (nom+" "+ape_pat+" "+ape_mat).str.strip().replace("","Sin Datos").fillna("Sin Datos")
-
-def _obtener_departamento_develz(df):
-    col = encontrar_columna(df, ["Datos Instalación - Departamento","Datos Instalacion - Departamento",
-                                  "DEPARTAMENTO","Departamento","departamento"])
-    return (df[col].fillna("Sin Datos").astype(str).str.strip().replace("","Sin Datos")
-            if col else pd.Series(["Sin Datos"] * len(df), index=df.index))
-
-def _obtener_tipis_develz(df):
-    col = encontrar_columna(df, ["TIPIS","Tipis","tipis","Estados - Venta Especificacion",
-                                  "Estados - Venta Especificación","Estado - Venta Especificacion",
-                                  "Estado - Venta Especificación","ESTADO OPERATIVO","Estado Operativo","estado operativo"])
-    return (df[col].fillna("Sin TIPIS").astype(str).str.strip().replace("","Sin TIPIS")
-            if col else pd.Series(["Sin TIPIS"] * len(df), index=df.index))
-
-def _obtener_documento_develz(df):
-    col = encontrar_columna(df, ["Cliente - Documento","Cliente - Nro Documento"])
-    return df[col].fillna("").astype(str).str.strip() if col else pd.Series([""] * len(df), index=df.index)
-
-@st.cache_data(ttl=600)
-def _base_claro_pago(tabla_ventas):
-    df_c = preparar_fechas_fija(get_tabla(tabla_ventas))
-    cols = ["SOT","COMISION_CLARO","COMISIONES_CLARO","FECHA_INSTALACION_CLARO"]
-    if df_c.empty or "SOT" not in df_c.columns: return pd.DataFrame(columns=cols)
-    df_c = df_c.copy()
-    df_c["SOT"] = _normalizar_sot_series(df_c["SOT"])
-    df_c = df_c[df_c["SOT"] != ""]
-    df_c["COMISION_CLARO"] = obtener_comision_fija(df_c)
-    df_c["COMISIONES_CLARO"] = (df_c["COMISIONES"].fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
-                                 if "COMISIONES" in df_c.columns else "")
-    df_c["_pagada_flag"] = (df_c["COMISIONES_CLARO"] == "SI") | (df_c["COMISION_CLARO"] > 0)
-    # Extraer FECHA INSTALACION de CLARO para mostrarla en el detalle
-    df_c["_FECHA_INST_CLARO_DT"] = pd.to_datetime(
-        df_c["FECHA INSTALACION"] if "FECHA INSTALACION" in df_c.columns else None,
-        errors="coerce", dayfirst=True
-    )
-    resumen = df_c.groupby("SOT", as_index=False).agg(
-        COMISION_CLARO=("COMISION_CLARO","sum"),
-        PAGADA_FLAG=("_pagada_flag","max"),
-        FECHA_INSTALACION_CLARO=("_FECHA_INST_CLARO_DT","max"))
-    resumen["COMISIONES_CLARO"] = resumen["PAGADA_FLAG"].apply(lambda x: "SI" if x else "NO")
-    resumen["FECHA_INSTALACION_CLARO"] = pd.to_datetime(
-        resumen["FECHA_INSTALACION_CLARO"], errors="coerce"
-    ).dt.strftime("%d/%m/%Y").fillna("")
-    return resumen[cols]
-
-@st.cache_data(ttl=600)
-def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes, filtro_fecha_venta="Todos los meses"):
-    cols_salida = ["Canal","SOT","Documento","SUPERVISOR","ASESOR","Nombre del Cliente","Departamento",
-                   "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago"]
-    try:
-        df_m = get_tabla(tabla_maestro)
-        if df_m.empty: return pd.DataFrame(columns=cols_salida)
-        df_m = df_m.copy()
-        df_m["Canal"] = canal
-        df_m["SOT"] = _normalizar_sot_series(_obtener_sot_develz(df_m))
-        df_m["Documento"] = _obtener_documento_develz(df_m)
-        df_m["_FECHA_DT"] = _obtener_fecha_inst_develz(df_m)
-        df_m["_FECHA_VENTA_DT"] = _obtener_fecha_venta_develz(df_m)
-
-        if filtro_mes != "Todos los meses":
-            m, y = parse_mes_anio(filtro_mes)
-            if m and y:
-                df_m = df_m[(df_m["_FECHA_DT"].dt.month == m) & (df_m["_FECHA_DT"].dt.year == y)].copy()
-
-        if filtro_fecha_venta != "Todos los meses":
-            m_v, y_v = parse_mes_anio(filtro_fecha_venta)
-            if m_v and y_v:
-                df_m = df_m[(df_m["_FECHA_VENTA_DT"].dt.month == m_v) & (df_m["_FECHA_VENTA_DT"].dt.year == y_v)].copy()
-
-        if df_m.empty: return pd.DataFrame(columns=cols_salida)
-        df_m["SUPERVISOR"] = _obtener_supervisor_develz(df_m)
-        df_m["ASESOR"] = _obtener_asesor_creador_develz(df_m)
-        df_m["Nombre del Cliente"] = _obtener_nombre_cliente_develz(df_m)
-        df_m["Departamento"] = _obtener_departamento_develz(df_m)
-        df_m["TIPIS"] = _obtener_tipis_develz(df_m)
-        df_m["Estado Operativo"] = df_m["TIPIS"].apply(_estado_desde_tipis)
-        df_pago = _base_claro_pago(tabla_claro)
-        df = df_m.merge(df_pago, on="SOT", how="left")
-
-        # Diagnóstico interno opcional:
-        # st.session_state["debug_detalle_fija"] = True
-        if st.session_state.get("debug_detalle_fija", False):
-            st.write(f"DEBUG {canal} | Base DEVELZ:", len(df_m))
-            st.write(f"DEBUG {canal} | SOT DEVELZ únicos:", df_m["SOT"].nunique())
-            st.write(f"DEBUG {canal} | Base CLARO pagos:", len(df_pago))
-            st.write(f"DEBUG {canal} | Cruces encontrados:", df["COMISION_CLARO"].notna().sum())
-            st.write(f"DEBUG {canal} | Pagadas SI:", (df.get("COMISIONES_CLARO", "").fillna("").astype(str).str.upper() == "SI").sum())
-            st.write(f"DEBUG {canal} | Comisión mayor a 0:", (pd.to_numeric(df.get("COMISION_CLARO", 0), errors="coerce").fillna(0) > 0).sum())
-        df["COMISION"] = pd.to_numeric(df.get("COMISION_CLARO", 0), errors="coerce").fillna(0)
-        df["COMISIONES_CLARO"] = df.get("COMISIONES_CLARO","").fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
-        df["Estado Pago"] = "CAÍDA"
-        df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION"] > 0), "Estado Pago"] = "PAGADA"
-        # FECHA INSTALACION: usar la del archivo CLARO cuando hay cruce, si no la de DEVELZ
-        _fecha_claro = df.get("FECHA_INSTALACION_CLARO", pd.Series("", index=df.index)).fillna("")
-        _fecha_develz = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
-        df["FECHA INSTALACION"] = _fecha_claro.where(_fecha_claro != "", _fecha_develz)
-        df["FECHA DE VENTA"] = df["_FECHA_VENTA_DT"].dt.strftime("%d/%m/%Y").fillna("")
-        for col in cols_salida:
-            if col not in df.columns: df[col] = ""
-        return df[cols_salida].reset_index(drop=True)
-    except Exception as e:
-        st.error(f"Error construyendo detalle DEVELZ {canal}: {e}")
-        return pd.DataFrame(columns=cols_salida)
-
-@st.cache_data(ttl=600)
-def construir_detalle_fija_general(filtro_mes, filtro_fecha_venta="Todos los meses"):
-    df_dc = construir_detalle_fija_develz("[DATA DEVELZ].dbo.FIJA_DC", "dbo.CLARO_DC_FIJA", "D&C", filtro_mes, filtro_fecha_venta)
-    df_tt = construir_detalle_fija_develz("[DATA DEVELZ].dbo.FIJA_TELETALK", "dbo.CLARO_TELETALK_FIJA", "Teletalk", filtro_mes, filtro_fecha_venta)
-    return pd.concat([df_dc, df_tt], ignore_index=True)
-
-def kpi_detalle_fija(df):
-    if df.empty: return 0, 0, 0, 0.0, 0.0
-    t,p,c = int(len(df)), int((df["Estado Pago"]=="PAGADA").sum()), int((df["Estado Pago"]=="CAÍDA").sum())
-    com = pd.to_numeric(df["COMISION"], errors="coerce").fillna(0).sum()
-    return t, p, c, com, (p/t*100) if t>0 else 0
-
-def ranking_departamentos_df(df):
-    """
-    Ranking gerencial por departamento.
-    Mantiene la lógica original:
-    - Total = cantidad de registros DEVELZ filtrados
-    - Pagadas = Estado Pago == PAGADA
-    - Caidas = Estado Pago == CAÍDA
-    - Comisión = suma de COMISION
-    """
-    cols = ["Rank", "Departamento", "Total", "Pagadas", "Caidas", "Comision", "% Participación", "% Efectividad"]
-
-    if df.empty or "Departamento" not in df.columns: return pd.DataFrame(columns=cols)
-
-    base = df.copy()
-    base["Departamento"] = base["Departamento"].fillna("Sin Departamento").astype(str).str.strip()
-    base.loc[base["Departamento"].eq(""), "Departamento"] = "Sin Departamento"
-    base["COMISION"] = pd.to_numeric(base.get("COMISION", 0), errors="coerce").fillna(0)
-
-    grp = (
-        base.groupby("Departamento", dropna=False)
-        .agg(
-            Total=("Estado Pago", "count"),
-            Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
-            Caidas=("Estado Pago", lambda x: (x == "CAÍDA").sum()),
-            Comision=("COMISION", "sum"),
-        )
-        .reset_index()
-    )
-
-    total_ventas = int(grp["Total"].sum())
-    total_pagadas = int(grp["Pagadas"].sum())
-    total_caidas = int(grp["Caidas"].sum())
-    total_comision = float(pd.to_numeric(grp["Comision"], errors="coerce").fillna(0).sum())
-
-    grp["% Participación"] = (grp["Pagadas"] / total_pagadas * 100).round(2) if total_pagadas > 0 else 0.0
-    grp["% Efectividad"] = (grp["Pagadas"] / grp["Total"] * 100).round(2).fillna(0)
-
-    grp = grp.sort_values(["Pagadas", "Comision", "Total"], ascending=[False, False, False]).reset_index(drop=True)
-    grp.insert(0, "Rank", grp.index + 1)
-
-    total_row = pd.DataFrame([{
-        "Rank": "TOTAL",
-        "Departamento": "",
-        "Total": total_ventas,
-        "Pagadas": total_pagadas,
-        "Caidas": total_caidas,
-        "Comision": total_comision,
-        "% Participación": 100.00 if total_pagadas > 0 else 0.00,
-        "% Efectividad": round((total_pagadas / total_ventas * 100), 2) if total_ventas > 0 else 0.00,
-    }])
-
-    return pd.concat([grp[cols], total_row[cols]], ignore_index=True)
-
-def mostrar_ranking_departamentos_premium(df):
-    rank_dpto = ranking_departamentos_df(df)
-
-    if rank_dpto.empty:
-        st.warning("No se encontró columna de departamento.")
-        return
-
-    base = rank_dpto[rank_dpto["Rank"].astype(str) != "TOTAL"].copy()
-    total = rank_dpto[rank_dpto["Rank"].astype(str) == "TOTAL"].copy()
-
-    total_departamentos = int(base["Departamento"].nunique()) if not base.empty else 0
-    total_ventas = int(total["Total"].iloc[0]) if not total.empty else int(base["Total"].sum())
-    total_pagadas = int(total["Pagadas"].iloc[0]) if not total.empty else int(base["Pagadas"].sum())
-    total_caidas = int(total["Caidas"].iloc[0]) if not total.empty else int(base["Caidas"].sum())
-    total_comision = float(total["Comision"].iloc[0]) if not total.empty else float(pd.to_numeric(base["Comision"], errors="coerce").fillna(0).sum())
-    efectividad = (total_pagadas / total_ventas * 100) if total_ventas > 0 else 0
-
-    # KPI territorial: Lima vs Provincia.
-    # Se calcula sobre el total de ventas de cada departamento dentro de la base filtrada.
-    if not base.empty and "Departamento" in base.columns:
-        dep_norm = (
-            base["Departamento"]
-            .fillna("")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-            .str.replace("Á", "A", regex=False)
-            .str.replace("É", "E", regex=False)
-            .str.replace("Í", "I", regex=False)
-            .str.replace("Ó", "O", regex=False)
-            .str.replace("Ú", "U", regex=False)
-        )
-        mask_lima = dep_norm.str.contains("LIMA", na=False)
-        lima_total = int(pd.to_numeric(base.loc[mask_lima, "Total"], errors="coerce").fillna(0).sum())
-        provincia_total = int(pd.to_numeric(base.loc[~mask_lima, "Total"], errors="coerce").fillna(0).sum())
-    else:
-        lima_total = 0
-        provincia_total = 0
-
-    lima_pct = (lima_total / total_ventas * 100) if total_ventas > 0 else 0
-    provincia_pct = (provincia_total / total_ventas * 100) if total_ventas > 0 else 0
-
-    st.markdown("""
-    <style>
-        .dpto-premium-wrap{
-            background:linear-gradient(135deg, rgba(255,255,255,.98), rgba(239,246,255,.96));
-            border:1px solid rgba(15,66,135,.16);
-            border-radius:26px;
-            padding:24px 24px 18px 24px;
-            box-shadow:0 18px 50px rgba(15,66,135,.13);
-            margin-bottom:18px;
-        }
-        .dpto-kpi-card{
-            background:white;
-            border-radius:22px;
-            padding:18px 14px;
-            text-align:center;
-            border:1px solid rgba(15,66,135,.16);
-            box-shadow:0 10px 28px rgba(0,0,0,.08);
-            min-height:112px;
-        }
-        .dpto-kpi-label{
-            font-size:11px;
-            font-weight:900;
-            color:#64748b;
-            letter-spacing:.08em;
-            text-transform:uppercase;
-            margin-bottom:8px;
-        }
-        .dpto-kpi-value{
-            font-size:30px;
-            font-weight:950;
-            color:#0f4287;
-            line-height:1.05;
-        }
-        .dpto-kpi-sub{
-            font-size:11px;
-            font-weight:700;
-            color:#94a3b8;
-            margin-top:6px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(f'<div class="dpto-kpi-card"><div class="dpto-kpi-label">Departamentos</div><div class="dpto-kpi-value">{total_departamentos:,}</div><div class="dpto-kpi-sub">zonas con gestión</div></div>', unsafe_allow_html=True)
-    with k2:
-        st.markdown(f'<div class="dpto-kpi-card"><div class="dpto-kpi-label">Lima</div><div class="dpto-kpi-value" style="color:#0f4287;">{lima_total:,}</div><div class="dpto-kpi-sub">{lima_pct:.2f}% del total</div></div>', unsafe_allow_html=True)
-    with k3:
-        st.markdown(f'<div class="dpto-kpi-card"><div class="dpto-kpi-label">Provincia</div><div class="dpto-kpi-value" style="color:#7c3aed;">{provincia_total:,}</div><div class="dpto-kpi-sub">{provincia_pct:.2f}% del total</div></div>', unsafe_allow_html=True)
-    with k4:
-        st.markdown(f'<div class="dpto-kpi-card"><div class="dpto-kpi-label">Efectividad</div><div class="dpto-kpi-value">{efectividad:.2f}%</div><div class="dpto-kpi-sub">pagadas / total</div></div>', unsafe_allow_html=True)
-
-    st.write("")
-
-    if not base.empty:
-        top = base.head(10).copy()
-        try:
-            import altair as alt
-            chart_data = top[["Departamento", "Pagadas", "Caidas"]].melt(
-                "Departamento",
-                var_name="Estado",
-                value_name="Cantidad"
-            )
-            chart = (
-                alt.Chart(chart_data)
-                .mark_bar(cornerRadiusEnd=6)
-                .encode(
-                    x=alt.X("Cantidad:Q", title="Ventas"),
-                    y=alt.Y("Departamento:N", sort="-x", title=""),
-                    color=alt.Color(
-                        "Estado:N",
-                        scale=alt.Scale(domain=["Pagadas", "Caidas"], range=["#059669", "#dc2626"]),
-                        legend=alt.Legend(title="Estado")
-                    ),
-                    tooltip=["Departamento", "Estado", "Cantidad"]
-                )
-                .properties(height=max(260, len(top) * 42), title="Top departamentos por ventas pagadas y caídas")
-                .configure_axis(labelFontSize=12, titleFontSize=13)
-                .configure_title(fontSize=18, fontWeight="bold", color="#0f4287")
-            )
-            st.altair_chart(chart, use_container_width=True)
-        except Exception:
-            st.info("No se pudo renderizar el gráfico, pero la tabla gerencial está disponible abajo.")
-
-    tabla = rank_dpto.copy()
-    tabla["Comision"] = tabla["Comision"].apply(lambda x: formatear_moneda(x) if isinstance(x, (int, float)) else x)
-    tabla["% Participación"] = tabla["% Participación"].apply(lambda x: f"{float(x):.2f}%" if isinstance(x, (int, float)) else x)
-    tabla["% Efectividad"] = tabla["% Efectividad"].apply(lambda x: f"{float(x):.2f}%" if isinstance(x, (int, float)) else x)
-
-    st.markdown("#### Tabla gerencial por departamento")
-
-    # IMPORTANTE:
-    # No usamos Styler.background_gradient porque requiere matplotlib.
-    # Estos estilos son manuales y funcionan sin instalar paquetes adicionales.
-    def _color_pagadas(val):
-        try:
-            v = float(val)
-            max_v = float(pd.to_numeric(tabla["Pagadas"], errors="coerce").fillna(0).max())
-            intensidad = 0 if max_v == 0 else min(v / max_v, 1)
-            alpha = 0.10 + (intensidad * 0.28)
-            return f"background-color: rgba(5,150,105,{alpha}); color:#064e3b; font-weight:800; text-align:center;"
-        except Exception:
-            return "text-align:center;"
-
-    def _color_caidas(val):
-        try:
-            v = float(val)
-            max_v = float(pd.to_numeric(tabla["Caidas"], errors="coerce").fillna(0).max())
-            intensidad = 0 if max_v == 0 else min(v / max_v, 1)
-            alpha = 0.08 + (intensidad * 0.24)
-            return f"background-color: rgba(220,38,38,{alpha}); color:#7f1d1d; font-weight:800; text-align:center;"
-        except Exception:
-            return "text-align:center;"
-
-    def _resaltar_total(row):
-        if str(row.get("Rank", "")).upper() == "TOTAL": return ["background-color:#0f4287; color:white; font-weight:900;" for _ in row]
-        return ["" for _ in row]
-
-    st.dataframe(
-        tabla.style
-        .apply(_resaltar_total, axis=1)
-        .map(_color_pagadas, subset=["Pagadas"])
-        .map(_color_caidas, subset=["Caidas"])
-        .set_properties(**{"text-align": "center", "font-size": "13px"})
-        .set_properties(subset=["Departamento"], **{"text-align": "left", "font-weight": "bold"}),
-        use_container_width=True,
-        height=min(650, 90 + 36 * len(tabla))
-    )
-
-    st.download_button(
-        "⬇️ Descargar Ranking Departamentos",
-        data=rank_dpto.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-        file_name="ranking_departamentos_develz.csv",
-        mime="text/csv",
-        key="dl_ranking_departamentos_premium",
-        on_click=registrar_descarga,
-        args=("Ranking Departamentos", "ranking_departamentos_develz.csv", "Vista premium gerencial")
-    )
-
-def ranking_asesores_detalle(df):
-    if df.empty or "SUPERVISOR" not in df.columns: return pd.DataFrame()
-    grp = df.groupby("SUPERVISOR").agg(
-        Total=("Estado Pago","count"),
-        Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
-        Caidas=("Estado Pago", lambda x: (x == "CAÍDA").sum()),
-        Comision=("COMISION", lambda x: pd.to_numeric(x, errors="coerce").fillna(0).sum()),
-    ).reset_index().sort_values(["Comision","Total"], ascending=[False,False]).reset_index(drop=True)
-    grp.insert(0,"Rank", grp.index + 1)
-    grp["% Efectividad"] = (grp["Pagadas"] / grp["Total"] * 100).round(2).astype(str) + "%"
-    total_row = pd.DataFrame([{"Rank":"TOTAL","SUPERVISOR":"","Total":grp["Total"].sum(),
-        "Pagadas":grp["Pagadas"].sum(),"Caidas":grp["Caidas"].sum(),
-        "% Efectividad":"","Comision":grp["Comision"].sum()}])
-    return pd.concat([grp, total_row], ignore_index=True)
-
-def ranking_asesores_por_supervisor_df(df, supervisor):
-    cols = ["Rank","ASESOR","Total","Pagadas","Caidas","Comision","% Efectividad"]
-    if df.empty: return pd.DataFrame(columns=cols)
-    base = df.copy()
-    if "SUPERVISOR" not in base.columns:
-        base["SUPERVISOR"] = "Sin Supervisor"
-    if "ASESOR" not in base.columns:
-        base["ASESOR"] = "Sin Asesor"
-    base["SUPERVISOR"] = base["SUPERVISOR"].fillna("Sin Supervisor").astype(str).str.strip().replace("", "Sin Supervisor")
-    base["ASESOR"] = base["ASESOR"].fillna("Sin Asesor").astype(str).str.strip().replace("", "Sin Asesor")
-    base["COMISION"] = pd.to_numeric(base.get("COMISION", 0), errors="coerce").fillna(0)
-    base = base[base["SUPERVISOR"] == supervisor].copy()
-    if base.empty: return pd.DataFrame(columns=cols)
-    grp = base.groupby("ASESOR", dropna=False).agg(
-        Total=("Estado Pago","count"),
-        Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
-        Caidas=("Estado Pago", lambda x: (x == "CAÍDA").sum()),
-        Comision=("COMISION","sum"),
-    ).reset_index().sort_values(["Comision","Pagadas","Total"], ascending=[False,False,False]).reset_index(drop=True)
-    grp.insert(0, "Rank", grp.index + 1)
-    grp["% Efectividad"] = (grp["Pagadas"] / grp["Total"] * 100).round(2).astype(str) + "%"
-    total = pd.DataFrame([{"Rank":"TOTAL","ASESOR":"","Total":int(grp["Total"].sum()),
-        "Pagadas":int(grp["Pagadas"].sum()),"Caidas":int(grp["Caidas"].sum()),
-        "Comision":float(grp["Comision"].sum()),"% Efectividad":""}])
-    return pd.concat([grp[cols], total[cols]], ignore_index=True)
-
-def mostrar_ranking_supervisores_con_asesores(df):
-    rank_df = ranking_asesores_detalle(df)
-    if rank_df.empty:
-        st.warning("Sin datos para el ranking.")
-        return
-
-    rank_sin_total = rank_df[rank_df["Rank"].astype(str) != "TOTAL"].copy()
-    total_row = rank_df[rank_df["Rank"].astype(str) == "TOTAL"].copy()
-
-    st.caption("Haz clic en el ➕ de cada supervisor para ver el detalle de asesores.")
-
-    for _, row in rank_sin_total.iterrows():
-        supervisor = str(row.get("SUPERVISOR", "Sin Supervisor")).strip() or "Sin Supervisor"
-        etiqueta = (
-            f"➕ {row['Rank']} | {supervisor} | "
-            f"Total: {int(row['Total']):,} | Pagadas: {int(row['Pagadas']):,} | "
-            f"Caídas: {int(row['Caidas']):,} | Comisión: {formatear_moneda(row['Comision'])} | "
-            f"Efectividad: {row['% Efectividad']}"
-        )
-        with st.expander(etiqueta, expanded=False):
-            detalle_asesor = ranking_asesores_por_supervisor_df(df, supervisor)
-            if detalle_asesor.empty:
-                st.info("Este supervisor no tiene asesores asociados con los filtros actuales.")
-            else:
-                st.dataframe(
-                    detalle_asesor.style.format({"Comision": lambda x: formatear_moneda(x) if isinstance(x, (int, float)) else x})
-                    .set_properties(**{"text-align":"center"})
-                    .set_properties(subset=["ASESOR"], **{"text-align":"left"}),
-                    use_container_width=True,
-                    height=min(420, 80 + 36 * len(detalle_asesor))
-                )
-
-    if not total_row.empty:
-        st.markdown("##### Total general")
-        st.table(total_row.style
-            .format({"Comision": lambda x: formatear_moneda(x) if isinstance(x,(int,float)) else x})
-            .set_properties(**{"text-align":"center"})
-            .set_properties(subset=["SUPERVISOR"], **{"text-align":"left"}))
-
-def ranking_asesores_fija_develz(df):
-    cols = ["Rank","ASESOR","Total","Pagadas","Caidas","% Efectividad","Comision"]
-    if df.empty or "ASESOR" not in df.columns: return pd.DataFrame(columns=cols)
-    base = df.copy()
-    base["ASESOR"] = base["ASESOR"].fillna("Sin Asesor").astype(str).str.strip().replace("","Sin Asesor")
-    base["COMISION"] = pd.to_numeric(base.get("COMISION",0), errors="coerce").fillna(0)
-    grp = base.groupby("ASESOR", dropna=False).agg(
-        Total=("Estado Pago","count"),
-        Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
-        Caidas=("Estado Pago", lambda x: (x == "CAÍDA").sum()),
-        Comision=("COMISION","sum"),
-    ).reset_index().sort_values(["Comision","Pagadas","Total"], ascending=[False,False,False]).reset_index(drop=True)
-    grp.insert(0,"Rank", grp.index + 1)
-    grp["% Efectividad"] = (grp["Pagadas"] / grp["Total"] * 100).round(2).astype(str) + "%"
-    total = pd.DataFrame([{"Rank":"TOTAL","ASESOR":"","Total":int(grp["Total"].sum()),
-        "Pagadas":int(grp["Pagadas"].sum()),"Caidas":int(grp["Caidas"].sum()),
-        "% Efectividad":"","Comision":float(grp["Comision"].sum())}])
-    return pd.concat([grp[cols], total[cols]], ignore_index=True)
-
-def mostrar_iae_asesor_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes, key_asesor, color):
-    df_det = construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes)
-    if df_det.empty: st.warning("Sin datos."); return
-
-    for campo, defecto in [("ASESOR","Sin Asesor"),("SUPERVISOR","Sin Supervisor"),("TIPIS","Sin TIPIS")]:
-        if campo not in df_det.columns: df_det[campo] = defecto
-        df_det[campo] = df_det[campo].fillna(defecto).astype(str).str.strip()
-        df_det.loc[df_det[campo].eq(""), campo] = defecto
-
-    f1, f2, f3 = st.columns(3)
-    with f1: filtro_a  = st.selectbox("Asesor / Creador", ["Todos"] + sorted(df_det["ASESOR"].unique().tolist()), key=key_asesor)
-    with f2: filtro_su = st.selectbox("Supervisor",       ["Todos"] + sorted(df_det["SUPERVISOR"].unique().tolist()), key=f"{key_asesor}_supervisor")
-    with f3: filtro_ti = st.selectbox("Tipificación",     ["Todos"] + sorted(df_det["TIPIS"].unique().tolist()), key=f"{key_asesor}_tipificacion")
-
-    df_f = df_det.copy()
-    if filtro_a  != "Todos": df_f = df_f[df_f["ASESOR"]      == filtro_a]
-    if filtro_su != "Todos": df_f = df_f[df_f["SUPERVISOR"]   == filtro_su]
-    if filtro_ti != "Todos": df_f = df_f[df_f["TIPIS"]        == filtro_ti]
-
-    total, pagadas, caidas, comision, pct = kpi_detalle_fija(df_f)
-    color_borde = "#0f4287" if color == "dc" else "#70008f"
-
-    def _card(col, label, valor, sub=""):
-        with col:
-            st.markdown(
-                f'<div style="background:rgba(255,255,255,.95);padding:14px;border-radius:16px;'
-                f'border:2px solid {color_borde};text-align:center;margin-bottom:8px;min-height:86px;">'
-                f'<span style="color:#4b5563;font-weight:800;font-size:10px;text-transform:uppercase;display:block;">{label}</span>'
-                f'<span style="color:{color_borde};font-size:24px;font-weight:900;display:block;line-height:1.1;">{valor}</span>'
-                f'<span style="color:#6b7280;font-size:10px;">{sub}</span></div>', unsafe_allow_html=True)
-
-import streamlit as st
-import pandas as pd
-import base64
-import os
-from io import BytesIO
-
-st.set_page_config(page_title="Dashboard Teletalk Digital", layout="wide", initial_sidebar_state="expanded")
-
-def set_bg(img_file):
-    bg = _leer_img_b64(img_file)
-    if not bg:
-        st.sidebar.warning(f"Imagen no encontrada: {img_file}")
-    st.markdown(f"""<style>
-        .stApp {{ {bg} background-size:cover; background-position:center; background-attachment:fixed; }}
         .main-title {{ text-align:center; color:black; font-weight:900; font-size:52px; margin-bottom:6px; }}
         .sub-title {{ text-align:center; font-weight:700; font-size:20px; color:#004a99; margin-bottom:25px; }}
         .kpi-wrapper {{ display:flex; flex-direction:column; align-items:center; margin-top:20px; }}
@@ -3130,6 +1970,160 @@ def mostrar_tab_planes_fija_gerencial(df_filtrado, color_borde="#0f4287"):
         data=df_show.to_csv(index=False,encoding="utf-8-sig").encode("utf-8-sig"),
         file_name="resumen_planes_fija.csv",mime="text/csv",key="dl_planes_fija_gerencial")
 
+def _parsear_semana_pago(serie):
+    """
+    Recibe una Serie con valores como 'S03.202511'.
+    Devuelve un DataFrame con columnas: SEMANA_PAGO_RAW, SEMANA_NUM, ANIO_MES, SEMANA_LABEL.
+    S03.202511 → Semana 3 · Nov 2025
+    """
+    s = serie.fillna("").astype(str).str.strip()
+    # Número de semana: dígitos tras la 'S' antes del punto
+    num = s.str.extract(r"^[Ss](\d+)", expand=False).fillna("")
+    # Parte de fecha: dígitos tras el punto
+    fecha_part = s.str.extract(r"\.(\d{6})", expand=False).fillna("")  # e.g. 202511
+    anio   = fecha_part.str[:4]
+    mes_n  = fecha_part.str[4:6]
+
+    def _label(row):
+        n, a, m = row["num"], row["anio"], row["mes"]
+        if not n or not a or not m:
+            return row["raw"] if row["raw"] else "Sin Semana"
+        try:
+            mes_es = MESES_ES.get(int(m), m)
+            return f"Semana {int(n)} · {mes_es} {a}"
+        except Exception:
+            return row["raw"]
+
+    tmp = pd.DataFrame({"raw": s, "num": num, "anio": anio, "mes": mes_n})
+    labels = tmp.apply(_label, axis=1)
+    num_int = pd.to_numeric(num, errors="coerce").fillna(0).astype(int)
+    anio_int = pd.to_numeric(anio, errors="coerce").fillna(0).astype(int)
+    mes_int  = pd.to_numeric(mes_n, errors="coerce").fillna(0).astype(int)
+    sort_key = anio_int * 10000 + mes_int * 100 + num_int
+    return pd.DataFrame({
+        "SEMANA_PAGO_RAW": s,
+        "SEMANA_NUM": num_int,
+        "ANIO_MES": anio_int * 100 + mes_int,
+        "SORT_KEY": sort_key,
+        "SEMANA_LABEL": labels,
+    })
+
+
+@st.cache_data(ttl=600)
+def _cargar_semana_pago_claro(canal_filter="Todos"):
+    """
+    Lee SEMANA PAGO de los archivos CLARO y devuelve un DataFrame
+    con columnas: SOT_KEY, SEMANA_PAGO_RAW, SEMANA_NUM, SEMANA_LABEL,
+    SORT_KEY, CANAL_CLARO, COMISION_CLARO, COMISIONES_CLARO.
+    """
+    partes = []
+    archivos = {
+        "CLARO_DC_FIJA.csv": "D&C",
+        "CLARO_TELETALK_FIJA.csv": "Teletalk",
+    }
+    for archivo, canal_c in archivos.items():
+        if canal_filter == "D&C" and canal_c != "D&C": continue
+        if canal_filter == "Teletalk" and canal_c != "Teletalk": continue
+
+        df_c = preparar_fechas_fija(cargar_csv(archivo))
+        if df_c.empty: continue
+        df_c = df_c.copy()
+
+        # Columna SOT
+        col_sot = next((c for c in df_c.columns if c.strip().upper() == "SOT"), None)
+        if not col_sot: continue
+        df_c["SOT_KEY"] = _sot_key_series(df_c[col_sot].fillna("").astype(str))
+        df_c = df_c[df_c["SOT_KEY"] != ""].copy()
+
+        # Columna SEMANA PAGO (variantes de nombre)
+        col_sem = next((c for c in df_c.columns
+                        if c.strip().upper() in ["SEMANA PAGO","SEMANA_PAGO","SEMANA DE PAGO"]), None)
+        if not col_sem:
+            continue  # si no existe la columna en este archivo, se omite
+
+        df_c["_SEM_RAW"] = df_c[col_sem].fillna("").astype(str).str.strip()
+
+        # Parsear semana
+        sem_df = _parsear_semana_pago(df_c["_SEM_RAW"])
+        df_c["SEMANA_PAGO_RAW"] = sem_df["SEMANA_PAGO_RAW"].values
+        df_c["SEMANA_NUM"]      = sem_df["SEMANA_NUM"].values
+        df_c["SEMANA_LABEL"]    = sem_df["SEMANA_LABEL"].values
+        df_c["SORT_KEY"]        = sem_df["SORT_KEY"].values
+
+        # Comisión y estado de pago desde CLARO
+        df_c["COMISION_CLARO"] = obtener_comision_fija(df_c)
+        col_com_estado = next((c for c in df_c.columns if c.strip().upper() == "COMISIONES"), None)
+        df_c["COMISIONES_CLARO"] = (
+            df_c[col_com_estado].fillna("").astype(str).str.upper().str.strip()
+            .str.replace("Í","I",regex=False)
+            if col_com_estado else "NO"
+        )
+        df_c["CANAL_CLARO"] = canal_c
+
+        partes.append(df_c[["SOT_KEY","SEMANA_PAGO_RAW","SEMANA_NUM","SEMANA_LABEL",
+                            "SORT_KEY","CANAL_CLARO","COMISION_CLARO","COMISIONES_CLARO"]])
+
+    if not partes:
+        return pd.DataFrame(columns=["SOT_KEY","SEMANA_PAGO_RAW","SEMANA_NUM","SEMANA_LABEL",
+                                     "SORT_KEY","CANAL_CLARO","COMISION_CLARO","COMISIONES_CLARO"])
+
+    df_all = pd.concat(partes, ignore_index=True)
+    # Deduplicar: si la misma SOT aparece en varios archivos, tomar la que tenga COMISIONES_CLARO == SI
+    df_all = df_all.sort_values(
+        ["SOT_KEY", "COMISIONES_CLARO"],
+        ascending=[True, False]
+    ).drop_duplicates(subset=["SOT_KEY"], keep="first")
+    return df_all.reset_index(drop=True)
+
+
+@st.cache_data(ttl=600)
+def _fechas_inst_por_semana_pago():
+    """
+    Devuelve dict: SEMANA_PAGO_RAW → (fecha_min_str, fecha_max_str)
+    Solo considera filas donde COMISIONES != NO en CLARO_DC_FIJA y CLARO_TELETALK_FIJA.
+    """
+    resultado = {}
+    for _arch in ["CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv"]:
+        _dfc = preparar_fechas_fija(cargar_csv(_arch))
+        if _dfc.empty: continue
+        col_sem_fi = next((c for c in _dfc.columns
+                           if c.strip().upper() in ["SEMANA PAGO","SEMANA_PAGO","SEMANA DE PAGO"]), None)
+        col_fi = "FECHA INSTALACION" if "FECHA INSTALACION" in _dfc.columns else None
+        if not col_sem_fi or not col_fi: continue
+        _dfc = _dfc.copy()
+
+        # ── Excluir COMISIONES == NO (misma lógica que el resto de la sección) ──
+        col_com_est = next((c for c in _dfc.columns if c.strip().upper() == "COMISIONES"), None)
+        if col_com_est:
+            _mask_si = (
+                _dfc[col_com_est].fillna("NO").astype(str)
+                .str.strip().str.upper()
+                .str.replace("Í","I", regex=False) != "NO"
+            )
+            _dfc = _dfc[_mask_si].copy()
+
+        _dfc["_SEM_R"] = _dfc[col_sem_fi].fillna("").astype(str).str.strip()
+        _dfc["_FI_DT"] = pd.to_datetime(_dfc[col_fi], errors="coerce", dayfirst=True)
+        for sem_raw, grp_fi in _dfc.groupby("_SEM_R"):
+            if not sem_raw: continue
+            fechas_v = grp_fi["_FI_DT"].dropna()
+            if fechas_v.empty: continue
+            f_min = fechas_v.min().strftime("%d/%m/%Y")
+            f_max = fechas_v.max().strftime("%d/%m/%Y")
+            if sem_raw not in resultado:
+                resultado[sem_raw] = (f_min, f_max)
+            else:
+                prev_min = pd.to_datetime(resultado[sem_raw][0], dayfirst=True)
+                prev_max = pd.to_datetime(resultado[sem_raw][1], dayfirst=True)
+                new_min  = fechas_v.min()
+                new_max  = fechas_v.max()
+                resultado[sem_raw] = (
+                    min(prev_min, new_min).strftime("%d/%m/%Y"),
+                    max(prev_max, new_max).strftime("%d/%m/%Y"),
+                )
+    return resultado
+
+
 def mostrar_detalle_fija_general():
     color_titulo = "#004a99"; color_borde = "#0f4287"
     set_bg(img_caratula)
@@ -3284,7 +2278,7 @@ def mostrar_detalle_fija_general():
     _kpi_card_html(k7,"Promedio Prime",formatear_moneda(ticket_promedio_fija),"Comisión Total / Pagadas", "#0891b2", "#0891b2")
     st.write("---")
 
-    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(["📋 Detalle Ventas","📆 Ventas por Día","🏆 Ranking Supervisor","👥 Ranking Asesores","📍 Ranking Departamentos","📊 Estados Operativos","📦 Por Planes"])
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs(["📋 Detalle Ventas","📆 Ventas por Día","🏆 Ranking Supervisor","👥 Ranking Asesores","📍 Ranking Departamentos","📊 Estados Operativos","📦 Por Planes","📅 Semana de Pago"])
 
     with tab1:
         st.markdown("#### Detalle de ventas DEVELZ con estado final")
@@ -3407,6 +2401,291 @@ def mostrar_detalle_fija_general():
 
     with tab7:
         mostrar_tab_planes_fija_gerencial(df_filtrado, color_borde="#0f4287")
+
+    with tab8:
+        # ─────────────────────────────────────────────────────────────
+        # TAB 8 · SEMANA DE PAGO
+        # Lee columna "SEMANA PAGO" de CLARO_DC_FIJA y CLARO_TELETALK_FIJA,
+        # parsea el código (ej. S03.202511 → Semana 3 / Nov 2025),
+        # cruza por SOT con la base DEVELZ (df_filtrado) y muestra
+        # un dashboard gerencial completo por semana.
+        # ─────────────────────────────────────────────────────────────
+
+        st.markdown("""
+        <style>
+        .sem-kpi{background:rgba(255,255,255,.97);border-radius:18px;padding:18px 14px;text-align:center;
+                 border:2px solid #0f4287;box-shadow:0 10px 28px rgba(0,0,0,.09);min-height:108px;}
+        .sem-kpi-label{font-size:10px;font-weight:900;color:#64748b;letter-spacing:.09em;
+                       text-transform:uppercase;margin-bottom:7px;display:block;}
+        .sem-kpi-value{font-size:30px;font-weight:950;line-height:1.05;display:block;}
+        .sem-kpi-sub{font-size:10px;font-weight:700;color:#94a3b8;margin-top:5px;display:block;}
+        .sem-header{font-size:20px;font-weight:900;color:#0f4287;margin:18px 0 6px 0;}
+        .sem-week-pill{display:inline-block;padding:6px 14px;border-radius:999px;
+                       background:#eff6ff;border:1px solid #bfdbfe;
+                       color:#1e40af;font-size:12px;font-weight:800;margin:3px;}
+        .sem-row-card{background:white;border-radius:14px;padding:10px 16px;margin:5px 0;
+                      border:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+        .sem-row-header{display:flex;align-items:center;justify-content:space-between;
+                        flex-wrap:wrap;gap:8px;}
+        .sem-row-label{font-weight:900;font-size:14px;color:#0f4287;}
+        .sem-row-stat{font-size:12px;color:#374151;font-weight:700;
+                      background:#f1f5f9;border-radius:8px;padding:3px 10px;}
+        .sem-date-badge{margin-top:8px;padding:7px 14px;border-radius:10px;
+                        background:#eff6ff;border-left:4px solid #2563eb;font-size:13px;}
+        .sem-total-card{background:linear-gradient(135deg,#0f4287,#2563eb);border-radius:14px;
+                        padding:12px 18px;margin:8px 0;color:white;}
+        .sem-total-label{font-weight:900;font-size:14px;}
+        .sem-total-stat{font-size:12px;font-weight:700;background:rgba(255,255,255,.18);
+                        border-radius:8px;padding:3px 10px;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 📅 Dashboard Gerencial — Semana de Pago")
+        st.caption("Semana de pago tomada de CLARO_DC_FIJA y CLARO_TELETALK_FIJA · cruzada con SOT de la base DEVELZ filtrada")
+
+        # ── Helper: parsear código de semana (definido a nivel de módulo, ver arriba) ──
+
+        # ── Cruzar semana con df_filtrado (DEVELZ ya filtrado) ─────────────
+        _canal_sem = "Todos" if filtro_canal == "Todos" else filtro_canal
+        df_semana_claro = _cargar_semana_pago_claro(_canal_sem)
+
+        if df_semana_claro.empty:
+            st.warning(
+                "⚠️ No se encontró la columna **SEMANA PAGO** en CLARO_DC_FIJA.csv ni en CLARO_TELETALK_FIJA.csv. "
+                "Verifica que los archivos tengan esa columna."
+            )
+        else:
+            # Normalizar SOT en df_filtrado para el cruce
+            df_filtrado_sem = df_filtrado.copy()
+            df_filtrado_sem["SOT_KEY"] = _sot_key_series(df_filtrado_sem["SOT"].fillna("").astype(str))
+
+            # Merge: enriquecer DEVELZ filtrado con info de semana de CLARO
+            df_cruzado = df_filtrado_sem.merge(
+                df_semana_claro[["SOT_KEY","SEMANA_PAGO_RAW","SEMANA_NUM","SEMANA_LABEL","SORT_KEY","CANAL_CLARO","COMISION_CLARO","COMISIONES_CLARO"]],
+                on="SOT_KEY",
+                how="left"
+            )
+            df_cruzado["SEMANA_LABEL"] = df_cruzado["SEMANA_LABEL"].fillna("Sin Semana Asignada")
+            df_cruzado["SORT_KEY"]     = df_cruzado["SORT_KEY"].fillna(999999).astype(int)
+            df_cruzado["SEMANA_NUM"]   = df_cruzado["SEMANA_NUM"].fillna(0).astype(int)
+            df_cruzado["COMISION_CLARO"]    = pd.to_numeric(df_cruzado.get("COMISION_CLARO",0), errors="coerce").fillna(0)
+            df_cruzado["COMISIONES_CLARO"]  = df_cruzado.get("COMISIONES_CLARO", pd.Series(["NO"]*len(df_cruzado))).fillna("NO")
+
+            # ── Filtro de semana (selector) ──────────────────────────────────
+            semanas_disp = (
+                df_cruzado[df_cruzado["SEMANA_LABEL"] != "Sin Semana Asignada"]
+                [["SEMANA_LABEL","SORT_KEY"]]
+                .drop_duplicates()
+                .sort_values("SORT_KEY")["SEMANA_LABEL"]
+                .tolist()
+            )
+            opciones_sem = ["Todas las semanas"] + semanas_disp
+            c_sem1, c_sem2 = st.columns([2,2])
+            with c_sem1:
+                filtro_semana = st.selectbox("Filtrar por Semana de Pago", opciones_sem, key="det_gen_semana_pago")
+            with c_sem2:
+                opciones_canal_sem = ["Todos","D&C","Teletalk"]
+                filtro_canal_sem = st.selectbox("Canal (semana)", opciones_canal_sem,
+                                                index=opciones_canal_sem.index(filtro_canal) if filtro_canal in opciones_canal_sem else 0,
+                                                key="det_gen_semana_canal")
+
+            df_sem = df_cruzado.copy()
+            if filtro_semana != "Todas las semanas":
+                df_sem = df_sem[df_sem["SEMANA_LABEL"] == filtro_semana]
+            if filtro_canal_sem != "Todos":
+                df_sem = df_sem[df_sem["Canal"] == filtro_canal_sem]
+
+            # ── Resumen por semana ───────────────────────────────────────────
+            st.markdown('<div class="sem-header">📊 Resumen Gerencial por Semana</div>', unsafe_allow_html=True)
+
+            if df_sem.empty:
+                st.info("No hay datos para los filtros seleccionados.")
+            else:
+                # ── 1) Excluir "Sin Semana Asignada" de la tabla y gráfico ───
+                # Mapa SOT_KEY → FECHA INSTALACION desde CLARO (función a nivel de módulo)
+                _map_fechas_sem = _fechas_inst_por_semana_pago()
+
+                df_sem_limpio = df_sem[df_sem["SEMANA_LABEL"] != "Sin Semana Asignada"].copy()
+
+                # Solo filas con COMISION > 0
+                _com_num = pd.to_numeric(df_sem_limpio["COMISION"], errors="coerce").fillna(0)
+                df_sem_limpio = df_sem_limpio[_com_num > 0].copy()
+
+                grp_sem = (
+                    df_sem_limpio
+                    .groupby(["SEMANA_LABEL","SEMANA_PAGO_RAW","SORT_KEY","Canal"], dropna=False)
+                    .agg(
+                        Total_Ventas=("Estado Pago","count"),
+                        Pagadas=("Estado Pago", lambda x: (x=="PAGADA").sum()),
+                        Caidas=("Estado Pago",  lambda x: (x!="PAGADA").sum()),
+                        Comision=("COMISION",   lambda x: pd.to_numeric(x,errors="coerce").fillna(0).sum()),
+                    )
+                    .reset_index()
+                    .sort_values(["SORT_KEY","Canal"])
+                )
+                grp_sem["% Efectividad"] = (grp_sem["Pagadas"]/grp_sem["Total_Ventas"]*100).round(2).fillna(0).astype(str) + "%"
+                # Semana corta para el gráfico: extraer número desde SEMANA_LABEL ("Semana 3 · Nov 2025" → "Semana 3")
+                def _extraer_semana_corta(label):
+                    import re as _re
+                    m = _re.search(r"[Ss]emana\s*(\d+)", str(label))
+                    return f"Semana {m.group(1)}" if m else str(label)
+                grp_sem["SEMANA_CORTA"] = grp_sem["SEMANA_LABEL"].apply(_extraer_semana_corta)
+
+                # ── Tabla con botón + desplegable por semana ─────────────────
+                # Ordenar filas normales y construir vista
+                filas_normales = (
+                    grp_sem[grp_sem["SEMANA_LABEL"] != "TOTAL"]
+                    .sort_values("SORT_KEY")
+                    .copy()
+                )
+
+                # Agrupar por semana (puede haber 2 filas si hay 2 canales)
+                semanas_orden = (
+                    filas_normales[["SEMANA_LABEL","SEMANA_PAGO_RAW","SORT_KEY"]]
+                    .drop_duplicates(subset=["SEMANA_LABEL"])
+                    .sort_values("SORT_KEY")
+                )
+
+                for _, _sr in semanas_orden.iterrows():
+                    _lbl  = _sr["SEMANA_LABEL"]
+                    _raw  = str(_sr["SEMANA_PAGO_RAW"]).strip()
+                    _rng  = _map_fechas_sem.get(_raw, None)
+                    _filas_sem = filas_normales[filas_normales["SEMANA_LABEL"] == _lbl]
+
+                    _tv   = int(_filas_sem["Total_Ventas"].sum())
+                    _pag  = int(_filas_sem["Pagadas"].sum())
+                    _cai  = int(_filas_sem["Caidas"].sum())
+                    _com  = float(_filas_sem["Comision"].sum())
+                    _pct  = f"{(_pag/_tv*100):.1f}%" if _tv > 0 else "0%"
+
+                    # Botón desplegable por semana usando st.expander con + en el título
+                    _fecha_hint = f"  📆 {_rng[0]} → {_rng[1]}" if _rng else "  📆 Fechas no disponibles"
+                    with st.expander(
+                        f"➕  {_lbl}{_fecha_hint}   |   Ventas: {_tv}   Pagadas: {_pag}   Caídas: {_cai}   {formatear_moneda(_com)}   {_pct}",
+                        expanded=False
+                    ):
+                        # Detalle por canal dentro del expander
+                        for _, _fila in _filas_sem.iterrows():
+                            _canal = str(_fila.get("Canal","")).strip() or "Sin Canal"
+                            _tv_c  = int(_fila["Total_Ventas"])
+                            _pag_c = int(_fila["Pagadas"])
+                            _cai_c = int(_fila["Caidas"])
+                            _com_c = float(_fila["Comision"])
+                            _pct_c = f"{(_pag_c/_tv_c*100):.1f}%" if _tv_c > 0 else "0%"
+                            _color_canal = "#0f4287" if "D&C" in _canal or "DC" in _canal.upper() else "#70008f"
+                            st.markdown(
+                                f'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;'
+                                f'padding:8px 14px;border-radius:10px;background:#f8fafc;'
+                                f'border-left:4px solid {_color_canal};margin:4px 0;">'
+                                f'<span style="font-weight:900;color:{_color_canal};font-size:13px;min-width:180px;">📣 {_canal}</span>'
+                                f'<span style="background:#e0e7ff;color:#3730a3;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800;">Ventas: {_tv_c}</span>'
+                                f'<span style="background:#dcfce7;color:#166534;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800;">✅ Pagadas: {_pag_c}</span>'
+                                f'<span style="background:#fee2e2;color:#991b1b;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800;">❌ Caídas: {_cai_c}</span>'
+                                f'<span style="background:#fef3c7;color:#92400e;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800;">💰 {formatear_moneda(_com_c)}</span>'
+                                f'<span style="background:#f3e8ff;color:#6b21a8;border-radius:7px;padding:3px 10px;font-size:12px;font-weight:800;">📈 {_pct_c}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+                        # Rango de fechas
+                        if _rng:
+                            st.markdown(
+                                f'<div style="margin-top:8px;padding:8px 14px;border-radius:10px;'
+                                f'background:#eff6ff;border-left:4px solid #2563eb;">'
+                                f'<span style="font-weight:900;color:#1e40af;font-size:13px;">📅 Rango de Fecha Instalación:&nbsp;&nbsp;</span>'
+                                f'<span style="color:#1d4ed8;font-weight:700;">{_rng[0]}</span>'
+                                f'<span style="color:#6b7280;"> → </span>'
+                                f'<span style="color:#1d4ed8;font-weight:700;">{_rng[1]}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+                        else:
+                            st.caption("Sin fechas de instalación disponibles para esta semana.")
+
+                # Fila TOTAL siempre al final (fuera de expanders)
+                _tot_tv  = int(grp_sem["Total_Ventas"].sum())
+                _tot_pag = int(grp_sem["Pagadas"].sum())
+                _tot_cai = int(grp_sem["Caidas"].sum())
+                _tot_com = float(grp_sem["Comision"].sum())
+                _tot_pct = f"{(_tot_pag/_tot_tv*100):.1f}%" if _tot_tv > 0 else "0%"
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;'
+                    f'padding:12px 18px;border-radius:14px;'
+                    f'background:linear-gradient(135deg,#0f4287,#2563eb);margin:10px 0;">'
+                    f'<span style="font-weight:900;color:white;font-size:15px;min-width:80px;">🏁 TOTAL</span>'
+                    f'<span style="background:rgba(255,255,255,.18);color:white;border-radius:7px;padding:4px 12px;font-size:13px;font-weight:800;">Ventas: {_tot_tv}</span>'
+                    f'<span style="background:rgba(255,255,255,.18);color:#bbf7d0;border-radius:7px;padding:4px 12px;font-size:13px;font-weight:800;">✅ Pagadas: {_tot_pag}</span>'
+                    f'<span style="background:rgba(255,255,255,.18);color:#fca5a5;border-radius:7px;padding:4px 12px;font-size:13px;font-weight:800;">❌ Caídas: {_tot_cai}</span>'
+                    f'<span style="background:rgba(255,255,255,.18);color:#fde68a;border-radius:7px;padding:4px 12px;font-size:13px;font-weight:800;">💰 {formatear_moneda(_tot_com)}</span>'
+                    f'<span style="background:rgba(255,255,255,.18);color:#e9d5ff;border-radius:7px;padding:4px 12px;font-size:13px;font-weight:800;">📈 {_tot_pct}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+                # ── 2) Gráfico con eje X abreviado "Semana N" ────────────────
+                base_chart_sem = grp_sem[grp_sem["SEMANA_LABEL"] != "TOTAL"].sort_values("SORT_KEY").copy()
+                if not base_chart_sem.empty:
+                    try:
+                        import altair as alt
+                        chart_melt_sem = base_chart_sem.melt(
+                            id_vars=["SEMANA_CORTA","Canal","SORT_KEY"],
+                            value_vars=["Total_Ventas","Pagadas","Caidas"],
+                            var_name="Indicador", value_name="Cantidad"
+                        )
+                        label_map = {"Total_Ventas":"Total Ventas","Pagadas":"Pagadas","Caidas":"Caídas"}
+                        chart_melt_sem["Indicador"] = chart_melt_sem["Indicador"].map(label_map).fillna(chart_melt_sem["Indicador"])
+                        # Orden del eje X: Semana 1, Semana 2, …
+                        orden_cortas = (
+                            base_chart_sem[["SEMANA_CORTA","SORT_KEY"]]
+                            .drop_duplicates()
+                            .sort_values("SORT_KEY")["SEMANA_CORTA"]
+                            .tolist()
+                        )
+                        indicadores_orden = ["Total Ventas","Pagadas","Caídas"]
+
+                        base_c = alt.Chart(chart_melt_sem).encode(
+                            x=alt.X("SEMANA_CORTA:N", title="Semana de Pago", sort=orden_cortas,
+                                    axis=alt.Axis(labelAngle=0, labelFontSize=12, titleFontSize=12)),
+                            xOffset=alt.XOffset("Indicador:N", sort=indicadores_orden),
+                            y=alt.Y("Cantidad:Q", title="Ventas",
+                                    axis=alt.Axis(labelFontSize=11, titleFontSize=12, grid=True)),
+                            color=alt.Color("Indicador:N",
+                                sort=indicadores_orden,
+                                scale=alt.Scale(
+                                    domain=indicadores_orden,
+                                    range=["#0f4287","#059669","#dc2626"]
+                                ),
+                                legend=alt.Legend(title="Indicador", orient="top-right",
+                                                  titleFontSize=12, labelFontSize=12)),
+                            tooltip=[
+                                alt.Tooltip("SEMANA_CORTA:N", title="Semana"),
+                                alt.Tooltip("Canal:N",  title="Canal"),
+                                alt.Tooltip("Indicador:N", title="Indicador"),
+                                alt.Tooltip("Cantidad:Q", title="Cantidad", format=",.0f"),
+                            ]
+                        )
+
+                        barras_c = base_c.mark_bar(
+                            cornerRadiusTopLeft=5, cornerRadiusTopRight=5, opacity=.90
+                        )
+                        etiquetas_c = base_c.mark_text(
+                            align="center", baseline="bottom",
+                            dy=-4, fontSize=11, fontWeight="bold", color="#111827"
+                        ).encode(
+                            text=alt.Text("Cantidad:Q", format=".0f")
+                        )
+
+                        chart_sem = (
+                            (barras_c + etiquetas_c)
+                            .properties(height=420, title="Ventas por Semana de Pago · Total vs Pagadas vs Caídas",
+                                        padding={"left":10,"right":20,"top":20,"bottom":10})
+                            .configure_title(fontSize=15, fontWeight="bold", color="#0f4287")
+                            .configure_axis(labelFontSize=11, titleFontSize=12,
+                                            grid=True, gridColor="#e5e7eb", domain=False)
+                            .configure_view(strokeWidth=0)
+                        )
+                        st.altair_chart(chart_sem, use_container_width=True)
+                    except Exception as _e_sem_chart:
+                        st.info(f"Gráfico no disponible: {_e_sem_chart}")
 
 # =========================================================
 # =========================================================
@@ -6040,6 +5319,7 @@ OPCIONES_MOVIL = [
 
 OPCIONES_FACTOR = [
     "📊 Resumen NPN",
+    "💼 Comisión Operativa",
 ]
 
 SEP_FIJA   = "📡 FIJA"
@@ -6152,10 +5432,15 @@ seccion       = ("movil"  if seleccion in OPCIONES_MOVIL
             else "fija")
 
 with st.sidebar.expander("🔍 Ver columnas de CSVs"):
-    for nombre in ["FIJA_DC.csv","FIJA_TELETALK.csv","CLARO_DC_FIJA.csv","CLARO_DC_FIJA_SEGUNDA_CAIDA.csv","CLARO_TELETALK_FIJA.csv","CLARO_DC_MOVIL.csv","CLARO_TELETALK_MOVIL.csv"]:
-        df_test = cargar_csv(nombre)
-        if not df_test.empty: st.write(f"**{nombre}:**"); st.write(list(df_test.columns))
-        else: st.write(f"**{nombre}:** ❌ no cargado")
+    if st.button("Cargar columnas", key="btn_cargar_cols"):
+        st.session_state["_cols_cargadas"] = True
+    if st.session_state.get("_cols_cargadas", False):
+        for nombre in ["FIJA_DC.csv","FIJA_TELETALK.csv","CLARO_DC_FIJA.csv","CLARO_DC_FIJA_SEGUNDA_CAIDA.csv","CLARO_TELETALK_FIJA.csv","CLARO_DC_MOVIL.csv","CLARO_TELETALK_MOVIL.csv"]:
+            df_test = cargar_csv(nombre)
+            if not df_test.empty: st.write(f"**{nombre}:**"); st.write(list(df_test.columns))
+            else: st.write(f"**{nombre}:** ❌ no cargado")
+    else:
+        st.caption("Presiona el botón para cargar las columnas disponibles.")
 
 if seccion == "factor":
 
@@ -6164,40 +5449,85 @@ if seccion == "factor":
 
         st.markdown("""
         <style>
-        .npn-hero {
-            background: linear-gradient(135deg,
-                rgba(15,66,135,0.85) 0%,
-                rgba(109,11,140,0.75) 55%,
-                rgba(15,66,135,0.85) 100%);
-            border-radius: 16px; padding: 36px 32px 28px 32px;
-            text-align: center; margin-bottom: 22px;
-            box-shadow: 0 6px 28px rgba(15,66,135,0.22);
-            border: 1px solid rgba(255,255,255,0.12);
+        /* ── Header gerencial ── */
+        .npn-header-wrap {
+            display:flex; align-items:center; justify-content:space-between;
+            background:linear-gradient(135deg,rgba(15,66,135,0.88) 0%,rgba(109,11,140,0.78) 100%);
+            border-radius:14px; padding:20px 28px; margin-bottom:18px;
+            box-shadow:0 4px 20px rgba(15,66,135,0.20);
+            border:1px solid rgba(255,255,255,0.10);
         }
-        .npn-title { font-size:34px; font-weight:900; color:#ffffff;
-            letter-spacing:0.07em; margin-bottom:4px; }
-        .npn-divider { width:60px; height:3px;
-            background:linear-gradient(90deg,#0057b8,#70008f);
-            border-radius:2px; margin:10px auto 12px auto; }
-        .npn-sub { font-size:13px; color:#d0dff5; letter-spacing:0.09em;
-            text-transform:uppercase; }
-        .npn-badge-dc { display:inline-block; background:rgba(15,66,135,0.7);
-            border:1.5px solid #4a90d9; color:#fff; font-weight:700; font-size:12px;
-            border-radius:20px; padding:4px 16px; margin:4px; letter-spacing:0.04em; }
-        .npn-badge-tt { display:inline-block; background:rgba(109,11,140,0.7);
-            border:1.5px solid #b05fd4; color:#fff; font-weight:700; font-size:12px;
-            border-radius:20px; padding:4px 16px; margin:4px; letter-spacing:0.04em; }
-        .npn-filtros-label { font-size:12px; font-weight:800; color:#1e3a5f;
-            letter-spacing:0.07em; text-transform:uppercase;
-            margin:16px 0 6px 0; }
+        .npn-header-left { text-align:left; }
+        .npn-header-right { text-align:right; }
+        .npn-kpi-label {
+            font-size:10px; font-weight:800; color:rgba(255,255,255,0.65);
+            letter-spacing:0.12em; text-transform:uppercase; margin-bottom:2px;
+        }
+        .npn-title {
+            font-size:26px; font-weight:900; color:#fff;
+            letter-spacing:0.06em; line-height:1.1;
+        }
+        .npn-sub {
+            font-size:11px; color:rgba(255,255,255,0.60);
+            letter-spacing:0.1em; text-transform:uppercase; margin-top:4px;
+        }
+        .npn-badge-dc {
+            display:inline-block; background:rgba(15,66,135,0.75);
+            border:1.5px solid #4a90d9; color:#fff; font-weight:700; font-size:11px;
+            border-radius:16px; padding:3px 13px; margin:2px; letter-spacing:0.03em;
+        }
+        .npn-badge-tt {
+            display:inline-block; background:rgba(109,11,140,0.75);
+            border:1.5px solid #b05fd4; color:#fff; font-weight:700; font-size:11px;
+            border-radius:16px; padding:3px 13px; margin:2px; letter-spacing:0.03em;
+        }
+        /* ── Filtros gerenciales ── */
+        .npn-filtros-wrap {
+            background:rgba(255,255,255,0.92); border-radius:10px;
+            padding:12px 18px 8px 18px; margin-bottom:14px;
+            box-shadow:0 2px 10px rgba(15,66,135,0.08);
+            border:1px solid #dde4f0;
+        }
+        .npn-filtros-label {
+            font-size:10px; font-weight:900; color:#0f4287;
+            letter-spacing:0.12em; text-transform:uppercase; margin-bottom:6px;
+        }
+        /* ── KPI cards gerenciales ── */
+        .npn-kpi-row { display:flex; gap:12px; margin:14px 0 6px 0; flex-wrap:wrap; }
+        .npn-kpi-card {
+            flex:1; min-width:140px;
+            background:rgba(255,255,255,0.95); border-radius:12px;
+            padding:16px 18px; text-align:center;
+            box-shadow:0 3px 14px rgba(0,0,0,0.08);
+            border-top:4px solid #0f4287;
+        }
+        .npn-kpi-card-label {
+            font-size:9px; font-weight:800; color:#6b7280;
+            letter-spacing:0.12em; text-transform:uppercase; margin-bottom:6px;
+        }
+        .npn-kpi-card-val {
+            font-size:28px; font-weight:900; color:#0f4287; line-height:1;
+        }
+        .npn-kpi-card-sub {
+            font-size:9px; color:#9ca3af; margin-top:5px; font-style:italic;
+        }
+        .npn-registros {
+            font-size:12px; color:#374151; font-weight:600;
+            background:rgba(255,255,255,0.85); border-radius:8px;
+            padding:6px 14px; display:inline-block; margin-bottom:10px;
+            border-left:3px solid #0f4287;
+        }
         </style>
-        <div class="npn-hero">
-            <div class="npn-title">📊 FACTOR NPN</div>
-            <div class="npn-divider"></div>
-            <div class="npn-sub">D&amp;C Digital Group &nbsp;·&nbsp; Teletalk Contact Center</div>
-            <div style="margin-top:14px;">
-                <span class="npn-badge-dc">📡 D&amp;C — Línea Azul</span>
-                <span class="npn-badge-tt">📱 Teletalk — Línea Morada</span>
+
+        <div class="npn-header-wrap">
+            <div class="npn-header-left">
+                <div class="npn-kpi-label">Módulo Ejecutivo</div>
+                <div class="npn-title">FACTOR NPN</div>
+                <div class="npn-sub">Reporte Consolidado de Ventas</div>
+            </div>
+            <div class="npn-header-right">
+                <span class="npn-badge-dc">📡 D&amp;C Digital Group</span><br>
+                <span class="npn-badge-tt" style="margin-top:5px;display:inline-block;">📱 Teletalk Contact Center</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -6253,7 +5583,7 @@ if seccion == "factor":
             _opts_finst = _npn_meses("_FINST_DT")
 
             # ── Filtros en 5 columnas ─────────────────────────────────
-            st.markdown('<div class="npn-filtros-label">🔍 Filtros</div>', unsafe_allow_html=True)
+            st.markdown('<div class="npn-filtros-wrap"><div class="npn-filtros-label">🔍 Filtros de Reporte</div>', unsafe_allow_html=True)
             _fc1, _fc2, _fc3, _fc4, _fc5 = st.columns([1,1,1.4,1.4,1.4])
             with _fc1:
                 _f_serv  = st.selectbox("Servicio",            _opts_serv,  key="npn_serv")
@@ -6266,6 +5596,7 @@ if seccion == "factor":
             with _fc5:
                 _f_sup   = st.multiselect("Supervisor", [o for o in _opts_sup if o != "Todos"], default=[], placeholder="Todos los supervisores", key="npn_sup")
 
+            st.markdown('</div>', unsafe_allow_html=True)
             # ── Aplicar filtros sobre DVZ crudo (para el contador de registros) ──
             _dff = _df_npn.copy()
             if _f_serv != "Todos" and _col_tipo:
@@ -6283,27 +5614,30 @@ if seccion == "factor":
             if _f_sup and _col_sup:
                 _dff = _dff[_dff[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)]
 
-            st.markdown(f"**{len(_dff):,} registros** encontrados con los filtros seleccionados.")
+            st.markdown(f'<div class="npn-registros">📋 {len(_dff):,} registros con los filtros seleccionados</div>', unsafe_allow_html=True)
 
-            # ── Cargar datos procesados con Estado Pago real ──────────
+            # ── Cargar datos procesados con Estado Pago real (cacheados) ─
+            # Se guarda en session_state para no recalcular al cambiar filtros
+            if "npn_fija_cache" not in st.session_state:
+                with st.spinner("Cargando datos FIJA... (solo la primera vez)"):
+                    _tmp = construir_detalle_fija_general("Todos los meses", "Todos los meses")
+                    _tmp["_TIPO_NPN"] = "FIJA"
+                    st.session_state["npn_fija_cache"] = _tmp
+            if "npn_movil_cache" not in st.session_state:
+                with st.spinner("Cargando datos MÓVIL... (solo la primera vez)"):
+                    _tmp2 = construir_resumen_movil_general("Todos los meses")
+                    _tmp2["_TIPO_NPN"] = "MOVIL"
+                    st.session_state["npn_movil_cache"] = _tmp2
+
             with st.spinner("Calculando KPIs..."):
-
-                # FIJA: ya tiene SOT, Estado Pago, COMISION, SUPERVISOR, FECHA DE VENTA, FECHA INSTALACION
-                _df_fija_npn = construir_detalle_fija_general("Todos los meses", "Todos los meses")
-                _df_fija_npn["_TIPO_NPN"] = "FIJA"
-
-                # MOVIL: ya tiene Estado Pago, COMISION, SUPERVISOR, FECHA DE VENTA
-                _df_movil_npn = construir_resumen_movil_general("Todos los meses")
-                _df_movil_npn["_TIPO_NPN"] = "MOVIL"
-                if "_FECHA_INSTALACION_DT" in _df_movil_npn.columns and "FECHA INSTALACION" not in _df_movil_npn.columns:
-                    _df_movil_npn["FECHA INSTALACION"] = _df_movil_npn["_FECHA_INSTALACION_DT"].astype(str)
+                _df_fija_npn  = st.session_state["npn_fija_cache"].copy()
+                _df_movil_npn = st.session_state["npn_movil_cache"].copy()
 
                 # SOT solo existe en fija; móvil no lo tiene → rellenar vacío
-                # calcular_pct_tv_fija usa SOT para buscar el producto con TV
                 if "SOT" not in _df_movil_npn.columns:
                     _df_movil_npn["SOT"] = ""
 
-                # Columnas comunes incluyendo SOT (necesario para calcular_pct_tv_fija)
+                # Columnas comunes
                 _cols_comun = ["Canal", "SUPERVISOR", "FECHA DE VENTA", "FECHA INSTALACION",
                                "SOT", "COMISION", "Estado Pago", "_TIPO_NPN"]
                 for _c in _cols_comun:
@@ -6321,11 +5655,52 @@ if seccion == "factor":
                 _df_npn_proc["_MES_VENTA"] = _df_npn_proc["_FVTA_PROC"].apply(
                     lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
 
-                # Parsear fecha instalación
-                _df_npn_proc["_FINST_PROC"] = pd.to_datetime(
-                    _df_npn_proc["FECHA INSTALACION"], errors="coerce", dayfirst=True)
-                _df_npn_proc["_MES_INST"] = _df_npn_proc["_FINST_PROC"].apply(
-                    lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                # ── Fecha Instalación: usar Back Office - Fecha Instalacion del DVZ crudo ──
+                # El filtro _f_finst usa opciones generadas desde _df_npn["_FINST_DT"]
+                # (que viene de "Back Office - Fecha Instalacion"), así que _MES_INST
+                # en proc debe venir de la misma fuente para que el filtro matchee.
+                # Construimos un mapa SOT/SEC → mes instalación desde el DVZ crudo.
+                _col_sot_dvz_inst = next((c for c in _df_npn.columns if c.strip().lower() == "back office - sot"), None)
+                _col_sec_dvz_inst = next((c for c in _df_npn.columns if c.strip().lower() == "datos adicionales - sec"), None)
+                _col_tipo_dvz     = _col_tipo  # ya detectado arriba
+
+                # Mapa SOT → _MES_INST (FIJA)
+                _mapa_sot_inst = {}
+                if _col_sot_dvz_inst and _col_finst:
+                    _dvz_fija_inst = _df_npn[
+                        _df_npn[_col_tipo_dvz].fillna("").astype(str).str.strip().str.upper() == "FIJA"
+                    ].copy() if _col_tipo_dvz else _df_npn.copy()
+                    _dvz_fija_inst["_SOT_K"] = _dvz_fija_inst[_col_sot_dvz_inst].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                    _dvz_fija_inst["_INST_MES"] = _dvz_fija_inst["_FINST_DT"].apply(
+                        lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                    _mapa_sot_inst = dict(zip(_dvz_fija_inst["_SOT_K"], _dvz_fija_inst["_INST_MES"]))
+
+                # Mapa SEC → _MES_INST (MÓVIL)
+                _mapa_sec_inst = {}
+                if _col_sec_dvz_inst and _col_finst:
+                    _dvz_movil_inst = _df_npn[
+                        _df_npn[_col_tipo_dvz].fillna("").astype(str).str.strip().str.upper() == "MOVIL"
+                    ].copy() if _col_tipo_dvz else _df_npn.copy()
+                    _dvz_movil_inst["_SEC_K"] = _dvz_movil_inst[_col_sec_dvz_inst].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                    _dvz_movil_inst["_INST_MES"] = _dvz_movil_inst["_FINST_DT"].apply(
+                        lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                    _mapa_sec_inst = dict(zip(_dvz_movil_inst["_SEC_K"], _dvz_movil_inst["_INST_MES"]))
+
+                # Asignar _MES_INST en proc usando los mapas del DVZ
+                def _get_mes_inst_proc(row):
+                    if row["_TIPO_NPN"] == "FIJA":
+                        sot = str(row.get("SOT","")).strip().replace(".0","") if row.get("SOT","") else ""
+                        return _mapa_sot_inst.get(sot, "")
+                    else:
+                        # Para móvil no tenemos columna SEC en proc directamente
+                        # Fallback: usar FECHA INSTALACION de proc
+                        try:
+                            d = pd.to_datetime(row["FECHA INSTALACION"], errors="coerce", dayfirst=True)
+                            return f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
+                        except:
+                            return ""
+
+                _df_npn_proc["_MES_INST"] = _df_npn_proc.apply(_get_mes_inst_proc, axis=1)
 
                 # ── Aplicar los mismos filtros sobre df procesado ────
                 _dfp = _df_npn_proc.copy()
@@ -6354,43 +5729,86 @@ if seccion == "factor":
                 # _dfp_pag ya tiene ambas (SOT vacío en móvil → no suma TV, correcto)
                 _pct_tv_npn, _ventas_tv_npn, _ = calcular_pct_tv_fija(_dfp_pag)
 
-                # ── KPI NETAS 3 MESES: lógica directa desde archivos CLARO ──────
-                # FIJA:  SOTs únicas en CLARO_DC_FIJA con COMISION > 0
-                #        + SOTs únicas en CLARO_DC_FIJA_SEGUNDA_CAIDA con COM ETAPA > 0
-                # MÓVIL: SECs únicas en CLARO_TELETALK_MOVIL con COMISION TOTAL > 0
-                #        + SECs únicas en CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA con COMISION > 0
+                # ── KPI NETAS 3 MESES ────────────────────────────────────────────
+                # FIJA : cruce por SOT  → "Back Office - Sot" (DVZ) vs "SOT" (CLARO_DC_FIJA_SEGUNDA_CAIDA)
+                # MÓVIL: cruce por SEC  → "Datos Adicionales - Sec" (DVZ) vs "SEC" (CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA)
+                # Los filtros de Fecha de Venta / Fecha Instalación se aplican sobre el DVZ.
+                # IMPORTANTE: DVZ guarda SOT/SEC como float (ej. "88597464.0") → se normaliza a entero string.
+
+                def _norm_id(serie):
+                    """Normaliza IDs numéricos: '88597464.0' → '88597464', quita blancos y nulos."""
+                    s = serie.dropna().astype(str).str.strip()
+                    s = s.str.replace(r"\.0$", "", regex=True)  # quitar .0 final de floats
+                    return s[s.str.len() > 0]
 
                 _netas_3m_fija  = 0
                 _netas_3m_movil = 0
 
-                # ── FIJA: solo 2da Etapa con COM ETAPA > 0 ───────────
-                # La base principal (CLARO_DC_FIJA) ya está en Ventas Netas.
-                # Aquí solo contamos las SOTs que recuperaron comisión en 2da etapa.
+                # Detectar columnas SOT y SEC en el DVZ (case-insensitive)
+                _col_sot_dvz = next(
+                    (c for c in _df_npn.columns if c.strip().lower() == "back office - sot"), None)
+                _col_sec_dvz = next(
+                    (c for c in _df_npn.columns if c.strip().lower() == "datos adicionales - sec"), None)
+
+                # Aplicar filtros activos sobre el DVZ (usa _df_npn que ya tiene _FVTA_DT y _FINST_DT)
+                _dvz_f = _df_npn.copy()
+                if _col_tipo and _f_serv != "Todos":
+                    _dvz_f = _dvz_f[_dvz_f[_col_tipo].fillna("").astype(str).str.strip().str.upper() == _f_serv.upper()]
+                if _col_clip and _f_canal != "Todos":
+                    _dvz_f = _dvz_f[_dvz_f[_col_clip].fillna("").astype(str).str.strip().str.upper() == _f_canal.upper()]
+                if _f_fvta:
+                    _dvz_f["_MV2"] = _dvz_f["_FVTA_DT"].apply(
+                        lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                    _dvz_f = _dvz_f[_dvz_f["_MV2"].isin(_f_fvta)]
+                if _f_finst:
+                    _dvz_f["_MI2"] = _dvz_f["_FINST_DT"].apply(
+                        lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                    _dvz_f = _dvz_f[_dvz_f["_MI2"].isin(_f_finst)]
+                if _f_sup and _col_sup:
+                    _dvz_f = _dvz_f[_dvz_f[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)]
+
+                # ── FIJA: SOTs del DVZ → cruce con CLARO_DC_FIJA_SEGUNDA_CAIDA ──────
                 try:
                     _df_cf2 = cargar_csv("CLARO_DC_FIJA_SEGUNDA_CAIDA.csv")
-                    if not _df_cf2.empty and "SOT" in _df_cf2.columns:
-                        _col_com_cf2 = encontrar_columna(_df_cf2,
-                            ["COM ETAPA","COM_ETAPA","Com Etapa","COMISION ETAPA","COMISIÓN ETAPA"])
-                        if _col_com_cf2:
-                            _cf2_mask = pd.to_numeric(_df_cf2[_col_com_cf2], errors="coerce").fillna(0) > 0
-                            _sots_cf2 = set(_df_cf2.loc[_cf2_mask, "SOT"].dropna().astype(str).str.strip().unique())
-                            _netas_3m_fija = len(_sots_cf2)
+                    _col_sot_cf2 = encontrar_columna(_df_cf2, ["SOT","Sot","sot"]) if not _df_cf2.empty else None
+                    _col_com_cf2 = encontrar_columna(_df_cf2,
+                        ["COM ETAPA","COM_ETAPA","Com Etapa","COMISION ETAPA","COMISIÓN ETAPA",
+                         "COMISION","COMISIÓN","Comision"]) if not _df_cf2.empty else None
+                    if not _df_cf2.empty and _col_sot_cf2 and _col_com_cf2:
+                        _cf2_com_mask = pd.to_numeric(_df_cf2[_col_com_cf2], errors="coerce").fillna(0) > 0
+                        if _col_sot_dvz:
+                            # Subconjunto FIJA del DVZ filtrado
+                            _dvz_fija = _dvz_f[_dvz_f[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "FIJA"].copy() if _col_tipo else _dvz_f.copy()
+                            _sots_dvz = set(_norm_id(_dvz_fija[_col_sot_dvz]))
+                            _cf2_sot_norm = _norm_id(_df_cf2[_col_sot_cf2]).reset_index(drop=True)
+                            # Reconstruir máscara alineada al df original
+                            _cf2_sot_all = _df_cf2[_col_sot_cf2].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                            _cf2_en_dvz  = _cf2_sot_all.isin(_sots_dvz)
+                            _netas_3m_fija = int(_cf2_sot_all[_cf2_en_dvz & _cf2_com_mask].nunique())
+                        else:
+                            # Sin columna SOT en DVZ → comportamiento original
+                            _netas_3m_fija = int(_df_cf2.loc[_cf2_com_mask, _col_sot_cf2].dropna().astype(str).str.strip().str.replace(r"\.0$","",regex=True).nunique())
                 except Exception:
                     pass
 
-                # ── MÓVIL: solo 2da Caída con COMISION > 0 ───────────
-                # La base principal (CLARO_TELETALK_MOVIL) ya está en Ventas Netas.
-                # Aquí solo contamos las SECs que recuperaron comisión en 2da caída.
+                # ── MÓVIL: SECs del DVZ → cruce con CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA ──
                 try:
                     _df_cm2 = cargar_csv("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
-                    if not _df_cm2.empty:
-                        _col_sec_cm2 = encontrar_columna(_df_cm2, ["SEC","Sec","sec"])
-                        _col_com_cm2 = encontrar_columna(_df_cm2,
-                            ["COMISION","COMISIÓN","Comision","Comisión","MONTO"])
-                        if _col_sec_cm2 and _col_com_cm2:
-                            _cm2_mask = pd.to_numeric(_df_cm2[_col_com_cm2], errors="coerce").fillna(0) > 0
-                            # Contar todas las filas con COMISION>0 (una SEC repetida = números distintos)
-                            _netas_3m_movil = int(_cm2_mask.sum())
+                    _col_sec_cm2 = encontrar_columna(_df_cm2, ["SEC","Sec","sec"]) if not _df_cm2.empty else None
+                    _col_com_cm2 = encontrar_columna(_df_cm2,
+                        ["COMISION","COMISIÓN","Comision","Comisión","MONTO"]) if not _df_cm2.empty else None
+                    if not _df_cm2.empty and _col_sec_cm2 and _col_com_cm2:
+                        _cm2_com_mask = pd.to_numeric(_df_cm2[_col_com_cm2], errors="coerce").fillna(0) > 0
+                        if _col_sec_dvz:
+                            # Subconjunto MOVIL del DVZ filtrado
+                            _dvz_movil = _dvz_f[_dvz_f[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"].copy() if _col_tipo else _dvz_f.copy()
+                            _secs_dvz = set(_norm_id(_dvz_movil[_col_sec_dvz]))
+                            _cm2_sec_all = _df_cm2[_col_sec_cm2].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                            _cm2_en_dvz  = _cm2_sec_all.isin(_secs_dvz)
+                            _netas_3m_movil = int(_cm2_sec_all[_cm2_en_dvz & _cm2_com_mask].nunique())
+                        else:
+                            # Sin columna SEC en DVZ → comportamiento original
+                            _netas_3m_movil = int(_df_cm2.loc[_cm2_com_mask, _col_sec_cm2].astype(str).str.strip().str.replace(r".0$","",regex=True).nunique())
                 except Exception:
                     pass
 
@@ -6431,15 +5849,428 @@ if seccion == "factor":
                     _val_n6m = "—"
                     _sub_n6m = "Próximamente"
 
-            # ── KPIs en una fila de 5 ────────────────────────────────
-            st.markdown("### 📊 KPIs Resumen NPN")
-            _nk1, _nk2, _nk3, _nk4, _nk5 = st.columns(5)
+            # ── KPIs gerenciales ─────────────────────────────────────
+            _color_n3m = "#0891b2" if _val_n3m != "—" else "#9ca3af"
+            _color_n6m = "#0f4287" if _val_n6m != "—" else "#9ca3af"
+            st.markdown(f"""
+            <div class="npn-kpi-row">
+                <div class="npn-kpi-card" style="border-top-color:#059669;">
+                    <div class="npn-kpi-card-label">Ventas Netas</div>
+                    <div class="npn-kpi-card-val" style="color:#059669;">{_ventas_netas_total:,}</div>
+                    <div class="npn-kpi-card-sub">PAGADAS · Fija + Móvil</div>
+                </div>
+                <div class="npn-kpi-card" style="border-top-color:{_color_n3m};">
+                    <div class="npn-kpi-card-label">Netas 3 Meses</div>
+                    <div class="npn-kpi-card-val" style="color:{_color_n3m};">{_val_n3m}</div>
+                    <div class="npn-kpi-card-sub">{_sub_n3m}</div>
+                </div>
+                <div class="npn-kpi-card" style="border-top-color:{_color_n6m};">
+                    <div class="npn-kpi-card-label">Netas 6 Meses</div>
+                    <div class="npn-kpi-card-val" style="color:{_color_n6m};">{_val_n6m}</div>
+                    <div class="npn-kpi-card-sub">{_sub_n6m}</div>
+                </div>
+                <div class="npn-kpi-card" style="border-top-color:#7c3aed;">
+                    <div class="npn-kpi-card-label">Comisión Total</div>
+                    <div class="npn-kpi-card-val" style="color:#7c3aed;font-size:22px;">{formatear_moneda(_comision_total_npn)}</div>
+                    <div class="npn-kpi-card-sub">Suma comisión pagadas</div>
+                </div>
+                <div class="npn-kpi-card" style="border-top-color:#7c3aed;">
+                    <div class="npn-kpi-card-label">% TV</div>
+                    <div class="npn-kpi-card-val" style="color:#7c3aed;">{_pct_tv_npn:.2f}%</div>
+                    <div class="npn-kpi-card-sub">{_ventas_tv_npn:,} pagadas con TV</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            _kpi_card_html(_nk1, "Ventas Netas",   f"{_ventas_netas_total:,}",            "PAGADAS Fija + Móvil",         "#059669", "#059669")
-            _kpi_card_html(_nk2, "Netas 3 Meses",  _val_n3m,                              _sub_n3m,                       "#0891b2", "#0891b2")
-            _kpi_card_html(_nk3, "Netas 6 Meses",  _val_n6m,                              _sub_n6m,                       "#0f4287", "#0f4287")
-            _kpi_card_html(_nk4, "Comisión Total", formatear_moneda(_comision_total_npn), "Suma comisión pagadas",        "#7c3aed", "#7c3aed")
-            _kpi_card_html(_nk5, "% TV",           f"{_pct_tv_npn:.2f}%",                f"{_ventas_tv_npn:,} pagadas con TV", "#7c3aed", "#7c3aed")
+            # ── Tablas Gerenciales de Retención por Mes de Instalación ──────────
+            st.markdown("""
+            <style>
+            .ret-section-title {
+                font-size:15px; font-weight:900; letter-spacing:.08em; text-transform:uppercase;
+                padding:10px 0 6px 0; margin-top:24px; margin-bottom:4px;
+            }
+            .ret-title-fija  { color:#0f4287; }
+            .ret-title-movil { color:#6d0b8c; }
+            .ret-table-wrap {
+                background:rgba(255,255,255,0.95); border-radius:14px;
+                overflow:hidden; margin-bottom:8px;
+                box-shadow:0 4px 18px rgba(0,0,0,0.07);
+            }
+            .ret-table { width:100%; border-collapse:collapse; font-size:13px; }
+            .ret-table thead th {
+                padding:10px 14px; text-align:left; font-weight:800;
+                font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+                border-bottom:2px solid rgba(0,0,0,0.08);
+            }
+            .ret-thead-fija  { background:#0f4287; color:white; }
+            .ret-thead-movil { background:#6d0b8c; color:white; }
+            .ret-table tbody tr { border-bottom:1px solid rgba(0,0,0,0.05); }
+            .ret-table tbody tr:last-child { border-bottom:none; }
+            .ret-table tbody tr:hover { background:rgba(0,0,0,0.02); }
+            .ret-table td { padding:9px 14px; color:#111827; font-weight:600; }
+            .ret-pct { font-weight:900; }
+            .ret-pct-ok   { color:#059669; }
+            .ret-pct-med  { color:#d97706; }
+            .ret-pct-proc { color:#6b7280; font-style:italic; font-weight:600; }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Función para clasificar % y estilo
+            def _ret_pct_html(instalados, llegan):
+                if llegan is None:
+                    return '<span class="ret-pct ret-pct-proc">En proceso</span>'
+                if instalados == 0:
+                    return '<span class="ret-pct ret-pct-proc">—</span>'
+                pct = llegan / instalados * 100
+                cls = "ret-pct-ok" if pct >= 80 else "ret-pct-med"
+                return f'<span class="ret-pct {cls}">{pct:.0f}%</span>'
+
+            MESES_ORDER = {v:k for k,v in {
+                1:'Enero',2:'Febrero',3:'Marzo',4:'Abril',5:'Mayo',6:'Junio',
+                7:'Julio',8:'Agosto',9:'Septiembre',10:'Octubre',11:'Noviembre',12:'Diciembre'
+            }.items()}
+
+            def _sort_mes(s):
+                parts = s.split()
+                if len(parts) == 2:
+                    try: return (int(parts[1]), MESES_ORDER.get(parts[0], 99))
+                    except: pass
+                return (9999, 99)
+
+            col_ret_fija, col_ret_movil = st.columns(2)
+
+            # ── Tabla FIJA ──────────────────────────────────────────────
+            with col_ret_fija:
+                st.markdown('<div class="ret-section-title ret-title-fija">📡 Retención FIJA · por Mes Instalación</div>', unsafe_allow_html=True)
+                try:
+                    # Instalados: SOTs únicas por mes en el DVZ (filtrado)
+                    _dvz_ret_fija = _dvz_f.copy() if "_dvz_f" in dir() else _df_npn.copy()
+                    _col_tipo_r   = _col_tipo
+                    _col_finst_r  = next((c for c in _df_npn.columns if c.strip().lower() in
+                        ["back office - fecha instalacion","back office - fecha instalación"]), None)
+                    _col_sot_r    = next((c for c in _df_npn.columns if c.strip().lower() == "back office - sot"), None)
+
+                    _dvz_ret_fija = _df_npn.copy()
+                    # Aplicar filtros activos excepto servicio (forzamos FIJA)
+                    if _col_tipo_r:
+                        _dvz_ret_fija = _dvz_ret_fija[
+                            _dvz_ret_fija[_col_tipo_r].fillna("").astype(str).str.strip().str.upper() == "FIJA"]
+                    if _col_clip and _f_canal != "Todos":
+                        _dvz_ret_fija = _dvz_ret_fija[
+                            _dvz_ret_fija[_col_clip].fillna("").astype(str).str.strip().str.upper() == _f_canal.upper()]
+                    if _f_sup and _col_sup:
+                        _dvz_ret_fija = _dvz_ret_fija[
+                            _dvz_ret_fija[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)]
+
+                    # Parsear fecha instalación
+                    if _col_finst_r:
+                        _dvz_ret_fija["_FINST_R"] = pd.to_datetime(
+                            _dvz_ret_fija[_col_finst_r], errors="coerce", dayfirst=True)
+                        _dvz_ret_fija["_MES_INST_R"] = _dvz_ret_fija["_FINST_R"].apply(
+                            lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                        _dvz_ret_fija = _dvz_ret_fija[_dvz_ret_fija["_MES_INST_R"] != ""]
+                        # Filtrar por Fecha Instalación si está activo
+                        if _f_finst:
+                            _dvz_ret_fija = _dvz_ret_fija[_dvz_ret_fija["_MES_INST_R"].isin(_f_finst)]
+
+                    if _col_sot_r and "_MES_INST_R" in _dvz_ret_fija.columns:
+                        _dvz_ret_fija["_SOT_R"] = _dvz_ret_fija[_col_sot_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                        _grp_fija = (_dvz_ret_fija[_dvz_ret_fija["_SOT_R"].str.len() > 0]
+                                     .groupby("_MES_INST_R")["_SOT_R"].nunique()
+                                     .reset_index())
+                        _grp_fija.columns = ["_MES","Instalados"]
+                        _grp_fija = _grp_fija.sort_values("_MES", key=lambda s: s.map(_sort_mes))
+
+                        # Llegan a 3M: cruce con CLARO_DC_FIJA_SEGUNDA_CAIDA por mes
+                        _df_cf2_r = cargar_csv("CLARO_DC_FIJA_SEGUNDA_CAIDA.csv")
+                        _col_sot_cf2_r   = encontrar_columna(_df_cf2_r, ["SOT","Sot","sot"]) if not _df_cf2_r.empty else None
+                        _col_com_cf2_r   = encontrar_columna(_df_cf2_r,
+                            ["COM ETAPA","COM_ETAPA","Com Etapa","COMISION ETAPA","COMISIÓN ETAPA",
+                             "COMISION","COMISIÓN","Comision"]) if not _df_cf2_r.empty else None
+
+                        _rows_fija = []
+                        for _, _row in _grp_fija.iterrows():
+                            _mes_label = _row["_MES"]
+                            _instalados = int(_row["Instalados"])
+                            _llegan = None
+                            if not _df_cf2_r.empty and _col_sot_cf2_r and _col_com_cf2_r:
+                                # SOTs de ese mes en DVZ
+                                _sots_mes = set(
+                                    _dvz_ret_fija[_dvz_ret_fija["_MES_INST_R"] == _mes_label]["_SOT_R"].unique())
+                                _cf2_sot_n = _df_cf2_r[_col_sot_cf2_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                                _cf2_com_n = pd.to_numeric(_df_cf2_r[_col_com_cf2_r], errors="coerce").fillna(0) > 0
+                                _llegan = int(_cf2_sot_n[_cf2_sot_n.isin(_sots_mes) & _cf2_com_n].nunique())
+                            _rows_fija.append((_mes_label, _instalados, _llegan))
+
+                        # Render tabla HTML
+                        _filas_html = ""
+                        for _mes_l, _inst, _ll in _rows_fija:
+                            _ll_txt = f"{_ll:,}" if _ll is not None else "En proceso"
+                            _pct_html = _ret_pct_html(_inst, _ll)
+                            _filas_html += f"""<tr>
+                                <td>{_mes_l}</td>
+                                <td style="text-align:right;">{_inst:,}</td>
+                                <td style="text-align:right;">{_ll_txt}</td>
+                                <td style="text-align:right;">{_pct_html}</td>
+                            </tr>"""
+                        st.markdown(f"""
+                        <div class="ret-table-wrap">
+                        <table class="ret-table">
+                            <thead class="ret-thead-fija">
+                                <tr>
+                                    <th>Mes Instalación</th>
+                                    <th style="text-align:right;">Instalados</th>
+                                    <th style="text-align:right;">Llegan a 3M</th>
+                                    <th style="text-align:right;">% 3M</th>
+                                </tr>
+                            </thead>
+                            <tbody>{_filas_html}</tbody>
+                        </table>
+                        </div>""", unsafe_allow_html=True)
+                    else:
+                        st.info("Sin datos de instalación FIJA disponibles.")
+                except Exception as _e_fija:
+                    st.warning(f"No se pudo construir tabla FIJA: {_e_fija}")
+
+            # ── Tabla MÓVIL ─────────────────────────────────────────────
+            with col_ret_movil:
+                st.markdown('<div class="ret-section-title ret-title-movil">📱 Retención MÓVIL · por Mes Instalación</div>', unsafe_allow_html=True)
+                try:
+                    _col_sec_r   = next((c for c in _df_npn.columns if c.strip().lower() == "datos adicionales - sec"), None)
+                    _col_finst_m = next((c for c in _df_npn.columns if c.strip().lower() in
+                        ["back office - fecha instalacion","back office - fecha instalación"]), None)
+
+                    _dvz_ret_movil = _df_npn.copy()
+                    if _col_tipo:
+                        _dvz_ret_movil = _dvz_ret_movil[
+                            _dvz_ret_movil[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"]
+                    if _col_clip and _f_canal != "Todos":
+                        _dvz_ret_movil = _dvz_ret_movil[
+                            _dvz_ret_movil[_col_clip].fillna("").astype(str).str.strip().str.upper() == _f_canal.upper()]
+                    if _f_sup and _col_sup:
+                        _dvz_ret_movil = _dvz_ret_movil[
+                            _dvz_ret_movil[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)]
+
+                    if _col_finst_m:
+                        _dvz_ret_movil["_FINST_M"] = pd.to_datetime(
+                            _dvz_ret_movil[_col_finst_m], errors="coerce", dayfirst=True)
+                        _dvz_ret_movil["_MES_INST_M"] = _dvz_ret_movil["_FINST_M"].apply(
+                            lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                        _dvz_ret_movil = _dvz_ret_movil[_dvz_ret_movil["_MES_INST_M"] != ""]
+                        if _f_finst:
+                            _dvz_ret_movil = _dvz_ret_movil[_dvz_ret_movil["_MES_INST_M"].isin(_f_finst)]
+
+                    if _col_sec_r and "_MES_INST_M" in _dvz_ret_movil.columns:
+                        _dvz_ret_movil["_SEC_R"] = _dvz_ret_movil[_col_sec_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                        _grp_movil = (_dvz_ret_movil[_dvz_ret_movil["_SEC_R"].str.len() > 0]
+                                      .groupby("_MES_INST_M")["_SEC_R"].nunique()
+                                      .reset_index())
+                        _grp_movil.columns = ["_MES","Instalados"]
+                        _grp_movil = _grp_movil.sort_values("_MES", key=lambda s: s.map(_sort_mes))
+
+                        # Llegan a 3M: cruce con CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA por mes
+                        _df_cm2_r = cargar_csv("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
+                        _col_sec_cm2_r = encontrar_columna(_df_cm2_r, ["SEC","Sec","sec"]) if not _df_cm2_r.empty else None
+                        _col_com_cm2_r = encontrar_columna(_df_cm2_r,
+                            ["COMISION","COMISIÓN","Comision","Comisión","MONTO"]) if not _df_cm2_r.empty else None
+
+                        _rows_movil = []
+                        for _, _row in _grp_movil.iterrows():
+                            _mes_label = _row["_MES"]
+                            _instalados = int(_row["Instalados"])
+                            _llegan = None
+                            if not _df_cm2_r.empty and _col_sec_cm2_r and _col_com_cm2_r:
+                                _secs_mes = set(
+                                    _dvz_ret_movil[_dvz_ret_movil["_MES_INST_M"] == _mes_label]["_SEC_R"].unique())
+                                _cm2_sec_n = _df_cm2_r[_col_sec_cm2_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+                                _cm2_com_n = pd.to_numeric(_df_cm2_r[_col_com_cm2_r], errors="coerce").fillna(0) > 0
+                                _llegan = int(_cm2_sec_n[_cm2_sec_n.isin(_secs_mes) & _cm2_com_n].nunique())
+                            _rows_movil.append((_mes_label, _instalados, _llegan))
+
+                        _filas_html_m = ""
+                        for _mes_l, _inst, _ll in _rows_movil:
+                            _ll_txt = f"{_ll:,}" if _ll is not None else "En proceso"
+                            _pct_html = _ret_pct_html(_inst, _ll)
+                            _filas_html_m += f"""<tr>
+                                <td>{_mes_l}</td>
+                                <td style="text-align:right;">{_inst:,}</td>
+                                <td style="text-align:right;">{_ll_txt}</td>
+                                <td style="text-align:right;">{_pct_html}</td>
+                            </tr>"""
+                        st.markdown(f"""
+                        <div class="ret-table-wrap">
+                        <table class="ret-table">
+                            <thead class="ret-thead-movil">
+                                <tr>
+                                    <th>Mes Instalación</th>
+                                    <th style="text-align:right;">Instalados</th>
+                                    <th style="text-align:right;">Llegan a 3M</th>
+                                    <th style="text-align:right;">% 3M</th>
+                                </tr>
+                            </thead>
+                            <tbody>{_filas_html_m}</tbody>
+                        </table>
+                        </div>""", unsafe_allow_html=True)
+                    else:
+                        st.info("Sin datos de instalación MÓVIL disponibles.")
+                except Exception as _e_movil:
+                    st.warning(f"No se pudo construir tabla MÓVIL: {_e_movil}")
+
+    elif opcion_factor == "💼 Comisión Operativa":
+        try:
+            set_bg(img_caratula)
+
+            st.markdown("""
+            <style>
+            .copex-header-wrap {
+                position:relative; z-index:1;
+                background:linear-gradient(135deg,rgba(15,66,135,0.88) 0%,rgba(109,11,140,0.78) 100%);
+                border-radius:14px; padding:20px 28px; margin-bottom:18px;
+                box-shadow:0 4px 20px rgba(15,66,135,0.20);
+                border:1px solid rgba(255,255,255,0.10);
+            }
+            .copex-title { font-size:26px; font-weight:900; color:#fff; letter-spacing:0.06em; line-height:1.1; }
+            .copex-sub   { font-size:11px; color:rgba(255,255,255,0.60); letter-spacing:0.1em; text-transform:uppercase; margin-top:4px; }
+            .copex-kpi-row { position:relative; z-index:1; display:flex; gap:12px; margin:14px 0 6px 0; flex-wrap:wrap; }
+            .copex-kpi-card {
+                position:relative; z-index:1;
+                flex:1; min-width:160px; background:#fff; border-radius:12px;
+                padding:16px 18px; text-align:center;
+                box-shadow:0 3px 14px rgba(0,0,0,0.08);
+                border-top:4px solid #0f4287;
+            }
+            .copex-kpi-label { font-size:9px; font-weight:800; color:#6b7280; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:6px; }
+            .copex-kpi-val   { font-size:28px; font-weight:900; color:#0f4287; line-height:1; }
+            .copex-kpi-sub   { font-size:9px; color:#9ca3af; margin-top:5px; font-style:italic; }
+            </style>
+            <div class="copex-header-wrap">
+                <div class="copex-title">💼 COMISIÓN OPERATIVA</div>
+                <div class="copex-sub">Cruce Base Pagadas (Fija + Móvil) vs. COMI_OPERATIVA.csv</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.spinner("Cargando comparativo de comisión operativa..."):
+
+                # ── Base: Ventas Pagadas Fija + Móvil (cachés ya existentes) ──
+                if "npn_fija_cache" not in st.session_state:
+                    _tmp = construir_detalle_fija_general("Todos los meses", "Todos los meses")
+                    _tmp["_TIPO_NPN"] = "FIJA"
+                    st.session_state["npn_fija_cache"] = _tmp
+                if "npn_movil_cache" not in st.session_state:
+                    _tmp2 = construir_resumen_movil_general("Todos los meses")
+                    _tmp2["_TIPO_NPN"] = "MOVIL"
+                    st.session_state["npn_movil_cache"] = _tmp2
+
+                _df_fija_co  = st.session_state["npn_fija_cache"]
+                _df_movil_co = st.session_state["npn_movil_cache"]
+
+                if "Estado Pago" in _df_fija_co.columns:
+                    _pag_fija_mask = _df_fija_co["Estado Pago"].fillna("").astype(str).str.strip().str.upper() == "PAGADA"
+                else:
+                    _pag_fija_mask = pd.Series([False] * len(_df_fija_co), index=_df_fija_co.index)
+                _base_pagadas_fija = int(_pag_fija_mask.sum())
+
+                if "Estado Pago" in _df_movil_co.columns:
+                    _pag_movil_mask = _df_movil_co["Estado Pago"].fillna("").astype(str).str.strip().str.upper() == "PAGADA"
+                else:
+                    _pag_movil_mask = pd.Series([False] * len(_df_movil_co), index=_df_movil_co.index)
+                _base_pagadas_movil = int(_pag_movil_mask.sum())
+
+                _base_pagadas_total = _base_pagadas_fija + _base_pagadas_movil
+
+                # ── COMI_OPERATIVA.csv: contar TODAS las filas (con repetidos) ──
+                # SOT > 0 (Fija) + SEC > 0 (Móvil), filtrando COMSION_OPERATIVA > 0
+                _df_co = cargar_csv("COMI_OPERATIVA.csv")
+
+                _co_sot_count = 0
+                _co_sec_count = 0
+                _co_comision_total = 0.0
+                _col_com_op = None
+                _mask_com_op = pd.Series(dtype=bool)
+
+                if not _df_co.empty:
+                    _df_co.columns = _df_co.columns.str.strip()
+                    _col_com_op = next((c for c in _df_co.columns if c.strip().upper() == "COMSION_OPERATIVA"), None)
+                    _col_sot_co = next((c for c in _df_co.columns if c.strip().upper() == "SOT"), None)
+                    _col_sec_co = next((c for c in _df_co.columns if c.strip().upper() == "SEC"), None)
+
+                    if _col_com_op:
+                        _com_op_num = pd.to_numeric(_df_co[_col_com_op], errors="coerce").fillna(0)
+                        _mask_com_op = _com_op_num > 0
+
+                        if _col_sot_co:
+                            _mask_sot = _mask_com_op & _df_co[_col_sot_co].notna() & (_df_co[_col_sot_co].astype(str).str.strip() != "")
+                            _co_sot_count = int(_mask_sot.sum())
+
+                        if _col_sec_co:
+                            _mask_sec = _mask_com_op & _df_co[_col_sec_co].notna() & (_df_co[_col_sec_co].astype(str).str.strip() != "")
+                            _co_sec_count = int(_mask_sec.sum())
+
+                        _co_comision_total = float(_com_op_num[_mask_com_op].sum())
+                    else:
+                        _mask_com_op = pd.Series([False] * len(_df_co), index=_df_co.index)
+
+                # Solo SEC count (ignora SOT para evitar doble conteo cuando una venta tiene ambos)
+                _co_total = _co_sec_count
+                _diferencia = _co_total - _base_pagadas_total
+
+            if _df_co.empty:
+                st.warning("No se encontró el archivo COMI_OPERATIVA.csv. Verifica que esté en la carpeta de datos.")
+            else:
+                st.markdown(f"""
+                <div class="copex-kpi-row">
+                    <div class="copex-kpi-card" style="border-top-color:#059669;">
+                        <div class="copex-kpi-label">Pagadas Base (Fija+Móvil)</div>
+                        <div class="copex-kpi-val" style="color:#059669;">{_base_pagadas_total:,}</div>
+                        <div class="copex-kpi-sub">Fija: {_base_pagadas_fija:,} · Móvil: {_base_pagadas_movil:,}</div>
+                    </div>
+                    <div class="copex-kpi-card" style="border-top-color:#0891b2;">
+                        <div class="copex-kpi-label">Comisión Operativa (Total)</div>
+                        <div class="copex-kpi-val" style="color:#0891b2;">{_co_total:,}</div>
+                        <div class="copex-kpi-sub">SEC únicas (móvil) · SOT ref: {_co_sot_count:,}</div>
+                    </div>
+                    <div class="copex-kpi-card" style="border-top-color:{'#dc2626' if _diferencia > 0 else '#7c3aed'};">
+                        <div class="copex-kpi-label">Diferencia</div>
+                        <div class="copex-kpi-val" style="color:{'#dc2626' if _diferencia > 0 else '#7c3aed'};">{_diferencia:+,}</div>
+                        <div class="copex-kpi-sub">Comi.Operativa − Base Pagadas</div>
+                    </div>
+                    <div class="copex-kpi-card" style="border-top-color:#7c3aed;">
+                        <div class="copex-kpi-label">Monto Comisión Operativa</div>
+                        <div class="copex-kpi-val" style="color:#7c3aed;font-size:22px;">{formatear_moneda(_co_comision_total)}</div>
+                        <div class="copex-kpi-sub">Suma COMSION_OPERATIVA &gt; 0</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.caption(
+                    "📌 **Lógica:** Pagadas Base = ventas con Estado Pago = PAGADA en Detalle Fija/Móvil General. "
+                    "Comisión Operativa = se cuentan **todas** las filas (con repetidos) de COMI_OPERATIVA.csv donde "
+                    "SOT (Fija) o SEC (Móvil) tienen valor, filtrando solo COMSION_OPERATIVA > 0."
+                )
+
+                # ── Tabla detalle ────────────────────────────────────────
+                with st.expander("📋 Ver detalle de COMI_OPERATIVA.csv (filas con COMSION_OPERATIVA > 0)", expanded=False):
+                    _cols_det = [c for c in ["DISTRIBUIDOR","SOT","SEC","PLAN_TARIFARIO","FECHA_ACTIVACION",
+                                              "FECHA_INSTALACION","TIPO_OPERACION","DEPARTAMENTO",
+                                              "COMSION_OPERATIVA","TOTAL"] if c in _df_co.columns]
+                    _df_det_co = _df_co[_mask_com_op][_cols_det].copy() if _col_com_op else _df_co[_cols_det].copy()
+                    if "COMSION_OPERATIVA" in _df_det_co.columns:
+                        _df_det_co["COMSION_OPERATIVA"] = pd.to_numeric(_df_det_co["COMSION_OPERATIVA"], errors="coerce").fillna(0).map(formatear_moneda)
+                    st.dataframe(_df_det_co, use_container_width=True, height=400)
+
+                    _csv_co = _df_det_co.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                    st.download_button(
+                        "⬇️ Descargar detalle Comisión Operativa",
+                        data=_csv_co,
+                        file_name="comision_operativa_detalle.csv",
+                        mime="text/csv",
+                        key="dl_comision_operativa"
+                    )
+        except Exception as e:
+            import traceback
+            st.error(f"⚠️ Error al cargar Comisión Operativa: {e}")
+            with st.expander("Ver detalle técnico del error"):
+                st.code(traceback.format_exc())
 
 elif seccion == "fija":
 
@@ -6669,3 +6500,4 @@ else:
                     st.info("Sin datos disponibles.")
                 else:
                     st.dataframe(tbl_tt, use_container_width=True, hide_index=True)
+
