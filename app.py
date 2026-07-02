@@ -7,6 +7,41 @@ from io import BytesIO
 
 st.set_page_config(page_title="Dashboard Teletalk Digital", layout="wide", initial_sidebar_state="expanded")
 
+import streamlit.components.v1 as _stc
+
+def _inject_loading_overlay():
+    _stc.html("""<!DOCTYPE html><html><head><style>*{margin:0;padding:0;}body{background:transparent;overflow:hidden;}</style></head>
+<body><script>
+(function(){
+  var doc=window.parent.document;
+  if(!doc.getElementById('tld-ov')){
+    var s=doc.createElement('style');
+    s.textContent='@keyframes tld-spin{to{transform:rotate(360deg)}}@keyframes tld-pop{from{transform:scale(.75);opacity:0}to{transform:scale(1);opacity:1}}';
+    doc.head.appendChild(s);
+    var ov=doc.createElement('div');
+    ov.id='tld-ov';
+    ov.style.cssText='display:none;position:fixed;inset:0;z-index:2147483647;background:rgba(2,6,23,.80);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);align-items:center;justify-content:center';
+    ov.innerHTML='<div style="background:linear-gradient(135deg,#0f4287,#2563eb 55%,#7c3aed);border-radius:22px;padding:40px 64px;display:flex;flex-direction:column;align-items:center;gap:18px;box-shadow:0 30px 70px rgba(0,0,0,.55);animation:tld-pop .28s cubic-bezier(.34,1.56,.64,1) both"><div style="width:52px;height:52px;border:5px solid rgba(255,255,255,.22);border-top-color:#fff;border-radius:50%;animation:tld-spin .7s linear infinite"></div><div style="color:#fff;font-size:24px;font-weight:900;font-family:Segoe UI,Arial,sans-serif;text-align:center">&#9203; Cargando Data</div><div style="color:rgba(255,255,255,.72);font-size:12px;font-weight:700;font-family:Segoe UI,Arial,sans-serif;letter-spacing:.1em;text-transform:uppercase;text-align:center">Dashboard Teletalk Digital &mdash; Por favor espere</div></div>';
+    doc.body.appendChild(ov);
+  }
+  var ov=doc.getElementById('tld-ov');
+  function show(){ov.style.display='flex';}
+  function hide(){ov.style.display='none';}
+  new MutationObserver(function(){
+    var running=doc.querySelector('[data-testid="stStatusWidget"]')||doc.querySelector('[class*="StatusWidget"]')||doc.querySelector('.stSpinner');
+    if(running){show();}else{hide();}
+  }).observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  doc.addEventListener('click',function(e){
+    var t=e.target;
+    if(t.closest('[role="tab"]')||t.closest('[data-testid="stSidebarNavLink"]')){
+      show();setTimeout(hide,9000);
+    }
+  },true);
+  hide();
+})();
+</script></body></html>""",height=0,scrolling=False)
+
+
 @st.cache_data(ttl=3600)
 def _leer_img_b64(img_file):
     """Lee la imagen una sola vez y la cachea para no releerla en cada cambio de pestaña."""
@@ -2456,7 +2491,15 @@ def mostrar_detalle_fija_general():
             )
         else:
             # Normalizar SOT en df_filtrado para el cruce
+            # Solo tomar registros con Tipo Producto == FIJA (semana de pago aplica solo a FIJA)
             df_filtrado_sem = df_filtrado.copy()
+            _col_tipo_sem = next((c for c in df_filtrado_sem.columns
+                                  if c.strip().lower() in ["tipo producto","tipo_producto"]), None)
+            if _col_tipo_sem:
+                df_filtrado_sem = df_filtrado_sem[
+                    df_filtrado_sem[_col_tipo_sem].fillna("").astype(str)
+                    .str.strip().str.upper() == "FIJA"
+                ]
             df_filtrado_sem["SOT_KEY"] = _sot_key_series(df_filtrado_sem["SOT"].fillna("").astype(str))
 
             # Merge: enriquecer DEVELZ filtrado con info de semana de CLARO
@@ -2600,6 +2643,24 @@ def mostrar_detalle_fija_general():
                             )
                         else:
                             st.caption("Sin fechas de instalación disponibles para esta semana.")
+
+                        # ── Botón de descarga por semana ─────────────────
+                        _df_desc_sem = df_sem[
+                            (df_sem["SEMANA_LABEL"] == _lbl) &
+                            (pd.to_numeric(df_sem["COMISION"], errors="coerce").fillna(0) > 0)
+                        ].copy()
+                        _cols_desc = [c for c in ["SOT","SUPERVISOR","Canal","FECHA DE VENTA",
+                            "FECHA INSTALACION","COMISION","Estado Pago","SEMANA_LABEL",
+                            "COMISION_CLARO","CANAL_CLARO"] if c in _df_desc_sem.columns]
+                        _csv_sem = _df_desc_sem[_cols_desc].to_csv(index=False, encoding="utf-8-sig")
+                        st.download_button(
+                            label=f"⬇️ Descargar {_lbl}",
+                            data=_csv_sem,
+                            file_name=f"semana_pago_{_lbl.replace(" ","_").replace("·","-")}.csv",
+                            mime="text/csv",
+                            key=f"dl_sem_{_lbl}",
+                            use_container_width=True
+                        )
 
                 # Fila TOTAL siempre al final (fuera de expanders)
                 _tot_tv  = int(grp_sem["Total_Ventas"].sum())
@@ -4066,81 +4127,189 @@ def mostrar_resumen_general_movil_premium(resumen_general):
         st.warning("No hay ventas válidas para el filtro seleccionado.")
         return
 
-    base = resumen_general[resumen_general["Canal"].astype(str).str.upper() != "TOTAL"].copy()
+    base  = resumen_general[resumen_general["Canal"].astype(str).str.upper() != "TOTAL"].copy()
     total = resumen_general[resumen_general["Canal"].astype(str).str.upper() == "TOTAL"].copy()
     if total.empty:
         total_ventas = int(pd.to_numeric(base.get("Total Ventas", 0), errors="coerce").fillna(0).sum())
-        pagadas = int(pd.to_numeric(base.get("Pagadas", 0), errors="coerce").fillna(0).sum())
-        no_pagadas = int(pd.to_numeric(base.get("No Pagadas", 0), errors="coerce").fillna(0).sum())
-        comision = float(pd.to_numeric(base.get("Comision", 0), errors="coerce").fillna(0).sum())
+        pagadas      = int(pd.to_numeric(base.get("Pagadas",      0), errors="coerce").fillna(0).sum())
+        no_pagadas   = int(pd.to_numeric(base.get("No Pagadas",   0), errors="coerce").fillna(0).sum())
+        comision     = float(pd.to_numeric(base.get("Comision",   0), errors="coerce").fillna(0).sum())
     else:
         total_ventas = int(pd.to_numeric(total["Total Ventas"].iloc[0], errors="coerce"))
-        pagadas = int(pd.to_numeric(total["Pagadas"].iloc[0], errors="coerce"))
-        no_pagadas = int(pd.to_numeric(total["No Pagadas"].iloc[0], errors="coerce"))
-        comision = float(pd.to_numeric(total["Comision"].iloc[0], errors="coerce"))
+        pagadas      = int(pd.to_numeric(total["Pagadas"].iloc[0],      errors="coerce"))
+        no_pagadas   = int(pd.to_numeric(total["No Pagadas"].iloc[0],   errors="coerce"))
+        comision     = float(pd.to_numeric(total["Comision"].iloc[0],   errors="coerce"))
 
-    pct_pago = (pagadas / total_ventas * 100) if total_ventas > 0 else 0
+    pct_pago  = (pagadas    / total_ventas * 100) if total_ventas > 0 else 0
     pct_caida = (no_pagadas / total_ventas * 100) if total_ventas > 0 else 0
 
+    # ── Header ──────────────────────────────────────────────────────────
     st.markdown("""
     <style>
-        .mov-resumen-wrap{
-            background:linear-gradient(135deg, rgba(255,255,255,.98), rgba(245,243,255,.96));
-            border:1px solid rgba(109,11,140,.16);
-            border-radius:24px;
-            padding:20px 22px;
-            box-shadow:0 14px 42px rgba(109,11,140,.12);
-            margin:8px 0 16px 0;
-        }
-        .mov-resumen-title{font-size:28px;font-weight:950;color:#70008f;margin-bottom:4px;}
-        .mov-resumen-sub{font-size:13px;font-weight:700;color:#64748b;}
-        .mov-mini-card{background:white;border-radius:18px;padding:15px 12px;text-align:center;border:1px solid rgba(109,11,140,.12);box-shadow:0 8px 24px rgba(0,0,0,.06);}
-        .mov-mini-label{font-size:10px;font-weight:900;color:#64748b;letter-spacing:.08em;text-transform:uppercase;}
-        .mov-mini-value{font-size:24px;font-weight:950;color:#70008f;margin-top:5px;}
+    .rg-header {
+        background:linear-gradient(135deg,rgba(109,11,140,0.88) 0%,rgba(15,66,135,0.78) 100%);
+        border-radius:14px; padding:20px 28px; margin-bottom:16px;
+        box-shadow:0 4px 20px rgba(109,11,140,0.18);
+        border:1px solid rgba(255,255,255,0.10);
+        display:flex; align-items:center; justify-content:space-between;
+    }
+    .rg-title  { font-size:24px; font-weight:900; color:#fff; letter-spacing:0.05em; line-height:1.1; }
+    .rg-sub    { font-size:11px; color:rgba(255,255,255,0.60); letter-spacing:0.10em; text-transform:uppercase; margin-top:4px; }
+    .rg-badge  { display:inline-block; border-radius:999px; padding:4px 14px; font-size:11px; font-weight:800; margin:2px; }
+    /* Tabla custom */
+    .rg-table  { width:100%; border-collapse:collapse; margin:14px 0; font-size:13px; }
+    .rg-table thead tr { background:linear-gradient(90deg,#70008f,#0f4287); color:#fff; }
+    .rg-table thead th { padding:11px 14px; text-align:center; font-weight:800; letter-spacing:.06em; font-size:11px; text-transform:uppercase; }
+    .rg-table thead th:first-child { text-align:left; border-radius:10px 0 0 0; }
+    .rg-table thead th:last-child  { border-radius:0 10px 0 0; }
+    .rg-table tbody tr  { border-bottom:1px solid #f1f5f9; transition:background .15s; }
+    .rg-table tbody tr:hover { background:#faf5ff; }
+    .rg-table tbody td  { padding:10px 14px; text-align:center; color:#374151; }
+    .rg-table tbody td:first-child { text-align:left; font-weight:800; color:#70008f; }
+    .rg-table tfoot tr  { background:linear-gradient(90deg,#0f4287,#70008f); }
+    .rg-table tfoot td  { padding:11px 14px; text-align:center; color:#fff; font-weight:900; font-size:13px; }
+    .rg-table tfoot td:first-child { text-align:left; border-radius:0 0 0 10px; }
+    .rg-table tfoot td:last-child  { border-radius:0 0 10px 0; }
+    .rg-pill-green { background:#dcfce7; color:#166534; border-radius:999px; padding:3px 10px; font-weight:800; font-size:12px; display:inline-block; }
+    .rg-pill-red   { background:#fee2e2; color:#991b1b; border-radius:999px; padding:3px 10px; font-weight:800; font-size:12px; display:inline-block; }
+    .rg-pill-blue  { background:#eff6ff; color:#1e40af; border-radius:999px; padding:3px 10px; font-weight:800; font-size:12px; display:inline-block; }
+    .rg-bar-wrap   { background:#f1f5f9; border-radius:999px; height:7px; margin-top:4px; overflow:hidden; min-width:80px; }
+    .rg-bar-fill   { height:7px; border-radius:999px; }
     </style>
-    <div class="mov-resumen-wrap">
-        <div class="mov-resumen-title">📋 Resumen General por Canal</div>
-        <div class="mov-resumen-sub">Lectura ejecutiva de ventas móviles, pago real Claro, caída y comisión por canal.</div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="rg-header">
+        <div>
+            <div class="rg-sub">Módulo Ejecutivo · Línea Móvil</div>
+            <div class="rg-title">📋 Resumen General por Canal</div>
+            <div class="rg-sub" style="margin-top:5px;">Ventas · Pago real Claro · Caída · Comisión por canal</div>
+        </div>
+        <div style="text-align:right;">
+            <span class="rg-badge" style="background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.35);color:#fff;">
+                ✅ Efectividad global: {pct_pago:.1f}%
+            </span><br>
+            <span class="rg-badge" style="margin-top:6px;background:rgba(255,255,255,.10);border:1.5px solid rgba(255,255,255,.25);color:rgba(255,255,255,.80);">
+                📊 {total_ventas:,} ventas totales
+            </span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-    tabla = resumen_general.copy()
-    if "Comision" in tabla.columns:
-        tabla["Comision"] = pd.to_numeric(tabla["Comision"], errors="coerce").fillna(0).map(formatear_moneda)
+    # ── Tabla HTML profesional ───────────────────────────────────────────
+    max_pag = max((pd.to_numeric(base.get("Pagadas", 0), errors="coerce").fillna(0).max()), 1)
 
-    def _resaltar_total_movil(row):
-        if str(row.get("Canal", "")).upper() == "TOTAL": return ["background-color:#70008f;color:white;font-weight:900;text-align:center;" for _ in row]
-        return ["text-align:center;" for _ in row]
+    def _fila_canal(row):
+        canal    = str(row.get("Canal", ""))
+        tv       = int(pd.to_numeric(row.get("Total Ventas", 0), errors="coerce") or 0)
+        pag      = int(pd.to_numeric(row.get("Pagadas",      0), errors="coerce") or 0)
+        nopag    = int(pd.to_numeric(row.get("No Pagadas",   0), errors="coerce") or 0)
+        com_raw  = pd.to_numeric(row.get("Comision",         0), errors="coerce") or 0
+        com_fmt  = formatear_moneda(float(com_raw))
+        pct_e    = f"{(pag/tv*100):.1f}%" if tv > 0 else "—"
+        pct_c    = f"{(nopag/tv*100):.1f}%" if tv > 0 else "—"
+        bar_pct  = int(pag / max_pag * 100)
+        bar_col  = "#059669" if bar_pct >= 60 else "#d97706"
+        ic       = "📡" if "D&C" in canal or "DC" in canal.upper() else "📱"
+        return f"""<tr>
+            <td>{ic} {canal}</td>
+            <td><span class="rg-pill-blue">{tv:,}</span></td>
+            <td>
+                <span class="rg-pill-green">{pag:,}</span>
+                <div class="rg-bar-wrap"><div class="rg-bar-fill" style="width:{bar_pct}%;background:{bar_col};"></div></div>
+            </td>
+            <td><span class="rg-pill-red">{nopag:,}</span></td>
+            <td><strong>{pct_e}</strong></td>
+            <td><strong style="color:#dc2626;">{pct_c}</strong></td>
+            <td><strong style="color:#7c3aed;">{com_fmt}</strong></td>
+        </tr>"""
 
-    st.dataframe(
-        tabla.style.apply(_resaltar_total_movil, axis=1).set_properties(**{"text-align":"center", "font-size":"13px"}),
-        use_container_width=True,
-        height=210
-    )
+    filas_html = "".join(_fila_canal(row) for _, row in base.iterrows())
 
+    # Fila total
+    pct_e_tot = f"{pct_pago:.1f}%"
+    pct_c_tot = f"{pct_caida:.1f}%"
+    com_tot   = formatear_moneda(comision)
+    tfoot_html = f"""<tr>
+        <td>🏁 TOTAL</td>
+        <td>{total_ventas:,}</td>
+        <td>{pagadas:,}</td>
+        <td>{no_pagadas:,}</td>
+        <td>{pct_e_tot}</td>
+        <td>{pct_c_tot}</td>
+        <td>{com_tot}</td>
+    </tr>"""
+
+    st.markdown(f"""
+    <table class="rg-table">
+        <thead><tr>
+            <th>Canal</th>
+            <th>Total Ventas</th>
+            <th>Pagadas</th>
+            <th>No Pagadas</th>
+            <th>% Efectividad</th>
+            <th>% Caída</th>
+            <th>Comisión</th>
+        </tr></thead>
+        <tbody>{filas_html}</tbody>
+        <tfoot>{tfoot_html}</tfoot>
+    </table>
+    """, unsafe_allow_html=True)
+
+    # ── Gráfico profesional con etiquetas ───────────────────────────────
     try:
         import altair as alt
         chart_base = base.copy()
-        chart_base = chart_base[chart_base["Canal"].astype(str).str.upper() != "TOTAL"].copy()
-        chart_base["Canal Mostrar"] = chart_base["Canal"].replace({"D&C": "Digital", "Teletalk": "Teletalk"})
+        chart_base["Pagadas"]    = pd.to_numeric(chart_base.get("Pagadas",    0), errors="coerce").fillna(0).astype(int)
+        chart_base["No Pagadas"] = pd.to_numeric(chart_base.get("No Pagadas", 0), errors="coerce").fillna(0).astype(int)
+        chart_base["Total Ventas"] = pd.to_numeric(chart_base.get("Total Ventas", 0), errors="coerce").fillna(0).astype(int)
+
         chart_data = chart_base.melt(
-            id_vars=["Canal Mostrar"],
-            value_vars=["Pagadas", "No Pagadas"],
-            var_name="Estado",
-            value_name="Ventas"
+            id_vars=["Canal"],
+            value_vars=["Total Ventas", "Pagadas", "No Pagadas"],
+            var_name="Estado", value_name="Ventas"
         )
+        orden_estados = ["Total Ventas", "Pagadas", "No Pagadas"]
+        base_c = alt.Chart(chart_data).encode(
+            x=alt.X("Canal:N", title="Canal",
+                    axis=alt.Axis(labelFontSize=13, titleFontSize=13, labelAngle=0)),
+            xOffset=alt.XOffset("Estado:N", sort=orden_estados),
+            y=alt.Y("Ventas:Q", title="Cantidad de Ventas",
+                    axis=alt.Axis(labelFontSize=11, titleFontSize=12, grid=True, gridColor="#e5e7eb")),
+            color=alt.Color("Estado:N",
+                sort=orden_estados,
+                scale=alt.Scale(
+                    domain=["Total Ventas", "Pagadas", "No Pagadas"],
+                    range=["#0f4287", "#059669", "#dc2626"]
+                ),
+                legend=alt.Legend(title="Indicador", orient="top-right",
+                                  titleFontSize=12, labelFontSize=12)),
+            tooltip=[
+                alt.Tooltip("Canal:N",   title="Canal"),
+                alt.Tooltip("Estado:N",  title="Indicador"),
+                alt.Tooltip("Ventas:Q",  title="Cantidad", format=",.0f"),
+            ]
+        )
+        barras = base_c.mark_bar(
+            cornerRadiusTopLeft=6, cornerRadiusTopRight=6, opacity=0.92
+        )
+        etiquetas = base_c.mark_text(
+            align="center", baseline="bottom",
+            dy=-5, fontSize=12, fontWeight="bold", color="#111827"
+        ).encode(text=alt.Text("Ventas:Q", format=".0f"))
+
         chart = (
-            alt.Chart(chart_data)
-            .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
-            .encode(
-                x=alt.X("Canal Mostrar:N", title="Canal", sort=["Digital", "Teletalk"]),
-                y=alt.Y("Ventas:Q", title="Ventas"),
-                xOffset=alt.XOffset("Estado:N", sort=["Pagadas", "No Pagadas"]),
-                color=alt.Color("Estado:N", scale=alt.Scale(domain=["Pagadas", "No Pagadas"], range=["#059669", "#dc2626"]), legend=alt.Legend(title="Estado")),
-                tooltip=["Canal Mostrar", "Estado", "Ventas"]
+            (barras + etiquetas)
+            .properties(
+                height=380,
+                title=alt.TitleParams(
+                    "Ventas por Canal · Total vs Pagadas vs Caídas",
+                    fontSize=15, fontWeight="bold", color="#70008f", anchor="start"
+                ),
+                padding={"left":10, "right":20, "top":20, "bottom":10}
             )
-            .properties(height=300, title="Ventas pagadas vs no pagadas por canal")
-            .configure_title(fontSize=18, fontWeight="bold", color="#70008f")
+            .configure_axis(domain=False, grid=True, gridColor="#f1f5f9")
+            .configure_view(strokeWidth=0)
         )
         st.altair_chart(chart, use_container_width=True)
     except Exception:
@@ -5302,6 +5471,9 @@ def login_inicio():
     st.stop()
 
 login_inicio()
+
+# Inyectar overlay de carga (usa components.html para acceder al DOM padre)
+_inject_loading_overlay()
 
 OPCIONES_FIJA = [
     "Inicio: Reporte Comparativo",
