@@ -132,7 +132,7 @@ _DVZ_SPLIT_MAP = {
     "MOVIL_TELETALK.csv":("MOVIL", "TELETALK"),
 }
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600)
 def _leer_dvz_crudo():
     ruta = os.path.join(DATA_DIR, "DVZ.csv")
     if not os.path.exists(ruta):
@@ -163,7 +163,7 @@ def _cargar_dvz_filtrado(nombre):
     mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == canal_clip
     return df[mask_tipo & mask_clip].copy()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600)
 def cargar_csv(nombre):
     # Si DVZ.csv existe y el nombre corresponde a uno de los 4 archivos viejos,
     # leer siempre desde DVZ filtrado. No debe volver a leer FIJA_DC/FIJA_TELETALK/MOVIL_DC/MOVIL_TELETALK.
@@ -833,7 +833,7 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
         st.error(f"Error construyendo detalle DEVELZ {canal}: {e}")
         return pd.DataFrame(columns=cols_salida)
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600)
 def construir_detalle_fija_general(filtro_mes, filtro_fecha_venta="Todos los meses"):
     df_dc = construir_detalle_fija_develz("[DATA DEVELZ].dbo.FIJA_DC", "dbo.CLARO_DC_FIJA", "D&C", filtro_mes, filtro_fecha_venta)
     df_tt = construir_detalle_fija_develz("[DATA DEVELZ].dbo.FIJA_TELETALK", "dbo.CLARO_TELETALK_FIJA", "Teletalk", filtro_mes, filtro_fecha_venta)
@@ -5910,6 +5910,12 @@ if seccion == "factor":
                     if _c not in _df_fija_npn.columns:  _df_fija_npn[_c]  = ""
                     if _c not in _df_movil_npn.columns: _df_movil_npn[_c] = ""
 
+                _cols_comun = ["Canal", "SUPERVISOR", "FECHA DE VENTA", "FECHA INSTALACION",
+                               "SOT", "COMISION", "Estado Pago", "DOCUMENTO_KEY", "_TIPO_NPN"]
+                for _c in _cols_comun:
+                    if _c not in _df_fija_npn.columns:  _df_fija_npn[_c]  = ""
+                    if _c not in _df_movil_npn.columns: _df_movil_npn[_c] = ""
+
                 _df_npn_proc = pd.concat(
                     [_df_fija_npn[_cols_comun], _df_movil_npn[_cols_comun]],
                     ignore_index=True
@@ -6390,16 +6396,27 @@ if seccion == "factor":
                     if _col_sot_r and "_MES_VTA_R" in _dvz_ret_fija.columns:
                         _dvz_ret_fija["_SOT_R"] = _dvz_ret_fija[_col_sot_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
                         
-                        # Calcular "Instalados" desde _dfp_pag (ventas pagadas) agrupadas por mes instalación
+                        # Contar registros únicos (no SOTs) por mes instalación del DVZ filtrado
+                        # Detectar mes instalación en DVZ si existe
+                        _col_finst_r = next((c for c in _dvz_ret_fija.columns if c.strip().lower() in
+                            ["back office - fecha instalacion","back office - fecha instalación"]), None)
+                        
                         _grp_fija_data = []
-                        if not _dfp_pag.empty:
-                            _dfp_pag_fija = _dfp_pag[_dfp_pag["_TIPO_NPN"] == "FIJA"].copy()
-                            if not _dfp_pag_fija.empty and "_MES_INST" in _dfp_pag_fija.columns:
-                                _dfp_pag_fija["SOT_NORM"] = _dfp_pag_fija["SOT"].fillna("").astype(str).str.strip().replace("", "")
-                                _grp_mes_inst = _dfp_pag_fija[_dfp_pag_fija["SOT_NORM"] != ""].groupby("_MES_INST")["SOT_NORM"].nunique()
-                                for mes, count in _grp_mes_inst.items():
-                                    if mes and mes != "":
-                                        _grp_fija_data.append({"_MES": mes, "Instalados": int(count)})
+                        if _col_finst_r:
+                            _dvz_ret_fija["_FINST_R"] = pd.to_datetime(_dvz_ret_fija[_col_finst_r], errors="coerce", dayfirst=True)
+                            _dvz_ret_fija["_MES_INST_R"] = _dvz_ret_fija["_FINST_R"].apply(
+                                lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                            _dvz_ret_fija_inst = _dvz_ret_fija[_dvz_ret_fija["_MES_INST_R"] != ""].copy()
+                            if not _dvz_ret_fija_inst.empty:
+                                _grp = _dvz_ret_fija_inst.groupby("_MES_INST_R").size()
+                                for mes, count in _grp.items():
+                                    _grp_fija_data.append({"_MES": mes, "Instalados": int(count)})
+                        else:
+                            # Fallback: usar _MES_VTA_R si no hay fecha instalación
+                            _grp = _dvz_ret_fija.groupby("_MES_VTA_R").size()
+                            for mes, count in _grp.items():
+                                _grp_fija_data.append({"_MES": mes, "Instalados": int(count)})
+                        
                         _grp_fija = pd.DataFrame(_grp_fija_data) if _grp_fija_data else pd.DataFrame(columns=["_MES", "Instalados"])
                         _grp_fija = _grp_fija.sort_values("_MES", key=lambda s: s.map(_sort_mes)) if not _grp_fija.empty else _grp_fija
 
@@ -6471,66 +6488,66 @@ if seccion == "factor":
             with col_ret_movil:
                 st.markdown('<div class="ret-section-title ret-title-movil">📱 Retención MÓVIL · por Mes Instalación<span class="ret-title-badge">2da y 3ra Caída · 3M / 6M</span></div>', unsafe_allow_html=True)
                 try:
-                    _col_sec_r   = next((c for c in _df_npn.columns if c.strip().lower() == "datos adicionales - sec"), None)
-                    _col_finst_m = next((c for c in _df_npn.columns if c.strip().lower() in
-                        ["back office - fecha instalacion","back office - fecha instalación"]), None)
+                    _col_sec_r = next((c for c in _df_npn.columns if c.strip().lower() == "datos adicionales - sec"), None)
 
-                    # ── Universo MÓVIL: tipo/canal/supervisor (la Fecha de Venta se sigue
-                    #    cruzando con el DVZ normal — no se toca ese comportamiento) ──
-                    _dvz_movil_uni = _df_npn.copy()
-                    if _col_tipo:
-                        _dvz_movil_uni = _dvz_movil_uni[
-                            _dvz_movil_uni[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"]
-                    if _col_clip and _f_canal != "Todos":
-                        _dvz_movil_uni = _dvz_movil_uni[
-                            _dvz_movil_uni[_col_clip].fillna("").astype(str).str.strip().str.upper() == _f_canal.upper()]
-                    if _f_sup and _col_sup:
-                        _dvz_movil_uni = _dvz_movil_uni[
-                            _dvz_movil_uni[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)]
+                    # ── Instalados: MISMA fuente que Detalle Móvil General ──────────────
+                    # Se usan MOVIL_DC.csv + MOVIL_TELETALK.csv → _FECHA_INSTALACION_DT
+                    # Esto garantiza que la columna "Instalados" coincida con la pestaña
+                    # Detalle Móvil General cuando se aplica el filtro de Fecha Instalación.
+                    _movil_ret_dfs = []
+                    for _canal_r, _arch_r in [("D&C","MOVIL_DC.csv"),("Teletalk","MOVIL_TELETALK.csv")]:
+                        if _f_canal != "Todos" and _canal_r != _f_canal:
+                            continue
+                        _dfr, _ = _leer_csv_movil_con_fallback([_arch_r])
+                        if _dfr.empty:
+                            continue
+                        _dfr = _dfr.copy()
+                        # Fecha instalación
+                        _col_fi_r = None
+                        for _cr in _dfr.columns:
+                            if _normalizar_nombre_columna_movil(_cr) in ("BACK OFFICE FECHA INSTALACION","FECHA INSTALACION"):
+                                _col_fi_r = _cr; break
+                        _dfr["_FINST_R"] = _parse_fecha_movil_robusta(_dfr[_col_fi_r]) if _col_fi_r else pd.Series(pd.NaT, index=_dfr.index)
+                        # DNI único por canal (igual que construir_resumen_movil_general)
+                        _doc_r, _ = _obtener_documento_movil_general(_dfr)
+                        _dfr["_DOC_R"] = _doc_r
+                        _dfr = _dfr[_dfr["_DOC_R"] != ""].copy()
+                        _dfr = _dfr.sort_values("_FINST_R", ascending=False, na_position="last")
+                        _dfr = _dfr.drop_duplicates(subset=["_DOC_R"], keep="first")
+                        _dfr["_CANAL_R"] = _canal_r
+                        _movil_ret_dfs.append(_dfr[["_DOC_R","_FINST_R","_CANAL_R"]])
 
-                    # ── Instalados por mes: se sigue basando en Fecha Instalación del DVZ ──
-                    _dvz_ret_movil = _dvz_movil_uni.copy()
-                    if _col_finst_m:
-                        _dvz_ret_movil["_FINST_M"] = pd.to_datetime(
-                            _dvz_ret_movil[_col_finst_m], errors="coerce", dayfirst=True)
-                        _dvz_ret_movil["_MES_INST_M"] = _dvz_ret_movil["_FINST_M"].apply(
-                            lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
-                        _dvz_ret_movil = _dvz_ret_movil[_dvz_ret_movil["_MES_INST_M"] != ""]
-                        if _f_finst:
-                            _dvz_ret_movil = _dvz_ret_movil[_dvz_ret_movil["_MES_INST_M"].isin(_f_finst)]
+                    _df_movil_ret = pd.concat(_movil_ret_dfs, ignore_index=True) if _movil_ret_dfs else pd.DataFrame()
 
                     _instalados_por_mes = {}
-                    if _col_sec_r and "_MES_INST_M" in _dvz_ret_movil.columns:
-                        _dvz_ret_movil["_SEC_R"] = _dvz_ret_movil[_col_sec_r].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
-                        
-                        # Calcular "Instalados" desde _dfp_pag (ventas pagadas) agrupadas por mes instalación
-                        if not _dfp_pag.empty:
-                            _dfp_pag_movil = _dfp_pag[_dfp_pag["_TIPO_NPN"] == "MOVIL"].copy()
-                            if not _dfp_pag_movil.empty and "_MES_INST" in _dfp_pag_movil.columns:
-                                # Para MÓVIL usar cualquier columna única del DVZ que podamos mapear (DOCUMENTO_KEY o similar)
-                                # Simplemente contar registros pagados por mes instalación
-                                _grp_mes = _dfp_pag_movil.groupby("_MES_INST").size().to_dict()
-                                _instalados_por_mes.update(_grp_mes)
+                    if not _df_movil_ret.empty:
+                        _df_movil_ret["_MES_INST_M"] = _df_movil_ret["_FINST_R"].apply(
+                            lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                        _df_movil_ret = _df_movil_ret[_df_movil_ret["_MES_INST_M"] != ""]
+                        if _f_finst:
+                            _df_movil_ret = _df_movil_ret[_df_movil_ret["_MES_INST_M"].isin(_f_finst)]
+                        _instalados_por_mes = _df_movil_ret.groupby("_MES_INST_M")["_DOC_R"].nunique().to_dict()
 
-                    # ── SEC universo elegible para cruzar contra 2da/3ra Caída ──────────
-                    # (mismo universo que usa el KPI Netas 3M/6M: no exige fecha instalación;
-                    #  si el filtro de Fecha Instalación está activo, sí se respeta).
+                    # ── SEC universo para cruzar caídas (desde DVZ, igual que los KPI) ──
                     _sec_universo = set()
                     if _col_sec_r:
-                        _uni_cross = _dvz_movil_uni.copy()
-                        if _f_finst and _col_finst_m:
-                            _uni_cross["_FINST_U"] = pd.to_datetime(_uni_cross[_col_finst_m], errors="coerce", dayfirst=True)
-                            _uni_cross["_MES_U"] = _uni_cross["_FINST_U"].apply(
-                                lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
-                            _uni_cross = _uni_cross[_uni_cross["_MES_U"].isin(_f_finst)]
+                        _uni_cross = _dvz_movil_uni.copy() if "_dvz_movil_uni" in dir() else _df_npn[
+                            _df_npn[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"
+                        ].copy() if _col_tipo else _df_npn.copy()
+                        if _f_finst:
+                            _col_finst_m = next((c for c in _df_npn.columns if c.strip().lower() in
+                                ["back office - fecha instalacion","back office - fecha instalación"]), None)
+                            if _col_finst_m:
+                                _uni_cross["_FINST_U"] = pd.to_datetime(_uni_cross[_col_finst_m], errors="coerce", dayfirst=True)
+                                _uni_cross["_MES_U"] = _uni_cross["_FINST_U"].apply(
+                                    lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                                _uni_cross = _uni_cross[_uni_cross["_MES_U"].isin(_f_finst)]
                         _sec_universo = set(
                             _uni_cross[_col_sec_r].dropna().astype(str).str.strip()
                             .str.replace(r"\.0$","",regex=True))
                         _sec_universo.discard("")
 
-                    # ── Llegan a 3M / 6M: el mes se toma de FEC ACTIV CTR del PROPIO
-                    #    archivo de caída (no de la fecha instalación del DVZ). Esto es lo
-                    #    que hace que la tabla converja con las tarjetas KPI Netas 3M/6M. ──
+                    # ── Llegan a 3M / 6M: FEC ACTIV CTR del archivo de caída ──────────
                     def _agrupar_caida_por_activacion(nombre_csv):
                         _df_c = cargar_csv(nombre_csv)
                         if _df_c.empty:
@@ -6749,6 +6766,109 @@ if seccion == "factor":
                     "Comisión Operativa = se cuentan **todas** las filas (con repetidos) de COMI_OPERATIVA.csv donde "
                     "SOT (Fija) o SEC (Móvil) tienen valor, filtrando solo COMSION_OPERATIVA > 0."
                 )
+
+                # ── Gráfico línea de tiempo ──────────
+                import streamlit.components.v1 as _stc_co_chart
+                _col_fecha_co = next((c for c in _df_co.columns if c.strip().upper() in [
+                    "FECHA_ACTIVACION","FECHA ACTIVACION","FECHA_INSTALACION","FECHA INSTALACION",
+                    "FECHA_OPERACION","FECHA OPERACION","FECHA","FECHA_PAGO","FECHA PAGO"]), None)
+                if _col_fecha_co and _col_com_op and not _df_co.empty:
+                    _df_chart = _df_co[_mask_com_op].copy()
+                    _df_chart["_FECHA_DT"] = pd.to_datetime(_df_chart[_col_fecha_co], errors="coerce", dayfirst=True)
+                    _df_chart = _df_chart.dropna(subset=["_FECHA_DT"])
+                    _df_chart["_COM_NUM"] = pd.to_numeric(_df_chart[_col_com_op], errors="coerce").fillna(0)
+                    _df_chart["_MES"] = _df_chart["_FECHA_DT"].dt.to_period("M").astype(str)
+                    _grp_chart = (_df_chart.groupby("_MES").agg(Registros=("_MES","count"), Comision=("_COM_NUM","sum")).reset_index().sort_values("_MES"))
+                    if not _grp_chart.empty:
+                        _meses_js = str(_grp_chart["_MES"].tolist())
+                        _regs_js  = str(_grp_chart["Registros"].tolist())
+                        _comis_js = str(_grp_chart["Comision"].round(2).tolist())
+                        _max_reg  = int(_grp_chart["Registros"].max()) or 1
+                        _max_com  = float(_grp_chart["Comision"].max()) or 1
+                        _chart_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:'Segoe UI',sans-serif;background:#f8fafc;padding:16px;}}
+.ct{{font-size:13px;font-weight:800;color:#0f4287;letter-spacing:.05em;margin-bottom:12px;}}
+.cw{{position:relative;width:100%;height:240px;}}canvas{{width:100%!important;height:100%!important;}}
+.leg{{display:flex;gap:20px;margin-top:10px;}}.li{{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#374151;}}
+.ld{{width:12px;height:12px;border-radius:50%;}}
+.tb{{position:absolute;background:rgba(15,30,60,.92);color:#fff;border-radius:10px;padding:10px 14px;font-size:12px;pointer-events:none;display:none;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:99;min-width:160px;}}
+.tt{{font-weight:800;font-size:13px;margin-bottom:6px;color:#93c5fd;}}
+.tr{{display:flex;justify-content:space-between;gap:16px;margin:2px 0;}}
+.tl{{color:rgba(255,255,255,.7);font-weight:600;}}.tv{{font-weight:800;}}
+</style></head><body><div class="ct">&#128200; Línea de Tiempo — Comisión Operativa por Mes</div>
+<div class="cw"><canvas id="coC"></canvas>
+<div class="tb" id="tip"><div class="tt" id="tm"></div>
+<div class="tr"><span class="tl">Registros</span><span class="tv" id="tr1" style="color:#60a5fa"></span></div>
+<div class="tr"><span class="tl">Comisi\xc3\xb3n</span><span class="tv" id="tr2" style="color:#34d399"></span></div></div></div>
+<div class="leg"><div class="li"><div class="ld" style="background:#1976d2"></div>Registros (eje izq.)</div>
+<div class="li"><div class="ld" style="background:#00897b"></div>Comisi\xc3\xb3n S/ (eje der.)</div></div>
+<script>
+var M={_meses_js},R={_regs_js},C={_comis_js},mR={_max_reg},mC={_max_com};
+var cv=document.getElementById('coC'),tip=document.getElementById('tip'),ctx=cv.getContext('2d');
+var PL=56,PT=16,PB=38,PR=56,n=M.length;
+function fmt(v){{return Math.round(v).toLocaleString('es-PE');}}
+function fmtS(v){{return 'S/ '+v.toLocaleString('es-PE',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}
+function W(){{return cv.offsetWidth;}}function H(){{return cv.offsetHeight;}}
+function xP(i){{return PL+(i/(n-1||1))*(W()-PL-PR);}}
+function yP(v,mx){{return PT+(H()-PT-PB)*(1-v/(mx||1));}}
+function resize(){{
+  cv.width=cv.parentElement.clientWidth*devicePixelRatio;
+  cv.height=cv.parentElement.clientHeight*devicePixelRatio;
+  cv.style.width=cv.parentElement.clientWidth+'px';
+  cv.style.height=cv.parentElement.clientHeight+'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);draw();
+}}
+function draw(){{
+  ctx.clearRect(0,0,W(),H());
+  ctx.strokeStyle='rgba(0,0,0,0.07)';ctx.lineWidth=1;
+  for(var g=0;g<=4;g++){{var gy=PT+(H()-PT-PB)*g/4;ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(W()-PR,gy);ctx.stroke();}}
+  ctx.beginPath();
+  for(var i=0;i<n;i++){{var x=xP(i),y=yP(R[i],mR);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}
+  ctx.lineTo(xP(n-1),H()-PB);ctx.lineTo(xP(0),H()-PB);ctx.closePath();
+  var g2=ctx.createLinearGradient(0,PT,0,H()-PB);
+  g2.addColorStop(0,'rgba(25,118,210,.2)');g2.addColorStop(1,'rgba(25,118,210,.01)');
+  ctx.fillStyle=g2;ctx.fill();
+  ctx.lineJoin='round';ctx.lineCap='round';
+  ctx.strokeStyle='#1976d2';ctx.lineWidth=2.5;ctx.setLineDash([]);
+  ctx.beginPath();for(var i=0;i<n;i++){{var x=xP(i),y=yP(R[i],mR);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}ctx.stroke();
+  ctx.strokeStyle='#00897b';ctx.lineWidth=2.5;ctx.setLineDash([6,3]);
+  ctx.beginPath();for(var i=0;i<n;i++){{var x=xP(i),y=yP(C[i],mC);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}ctx.stroke();
+  ctx.setLineDash([]);
+  for(var i=0;i<n;i++){{
+    [{{x:xP(i),y:yP(R[i],mR),s:'#1976d2'}},{{x:xP(i),y:yP(C[i],mC),s:'#00897b'}}].forEach(function(d){{
+      ctx.beginPath();ctx.arc(d.x,d.y,3.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+      ctx.strokeStyle=d.s;ctx.lineWidth=2;ctx.stroke();
+    }});
+  }}
+  ctx.fillStyle='#6b7280';ctx.font='9px Segoe UI';ctx.textAlign='center';
+  var step=Math.max(1,Math.ceil(n/8));
+  for(var i=0;i<n;i+=step){{ctx.fillText(M[i],xP(i),H()-PB+14);}}
+  ctx.textAlign='right';ctx.fillStyle='#1976d2';ctx.font='9px Segoe UI';
+  for(var g=0;g<=4;g++){{var v=mR*(4-g)/4,gy=PT+(H()-PT-PB)*g/4;ctx.fillText(fmt(v),PL-5,gy+3);}}
+  ctx.textAlign='left';ctx.fillStyle='#00897b';
+  for(var g=0;g<=4;g++){{var v=mC*(4-g)/4,gy=PT+(H()-PT-PB)*g/4;ctx.fillText(fmt(v),W()-PR+5,gy+3);}}
+}}
+cv.addEventListener('mousemove',function(e){{
+  var r=cv.getBoundingClientRect(),mx=e.clientX-r.left;
+  var idx=Math.round((mx-PL)/(W()-PL-PR)*(n-1));
+  idx=Math.max(0,Math.min(idx,n-1));
+  if(Math.abs(mx-xP(idx))<28){{
+    document.getElementById('tm').textContent=M[idx];
+    document.getElementById('tr1').textContent=fmt(R[idx]);
+    document.getElementById('tr2').textContent=fmtS(C[idx]);
+    var tx=xP(idx)+16,ty=e.clientY-r.top-44;
+    if(tx+160>W())tx=xP(idx)-176;
+    tip.style.left=tx+'px';tip.style.top=ty+'px';tip.style.display='block';
+    draw();
+    ctx.strokeStyle='rgba(0,0,0,.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(xP(idx),PT);ctx.lineTo(xP(idx),H()-PB);ctx.stroke();ctx.setLineDash([]);
+  }}else{{tip.style.display='none';}}
+}});
+cv.addEventListener('mouseleave',function(){{tip.style.display='none';draw();}});
+window.addEventListener('resize',resize);resize();
+</script></body></html>"""
+                        _stc_co_chart.html(_chart_html, height=320, scrolling=False)
+
 
                 # ── Tabla detalle ────────────────────────────────────────
                 with st.expander("📋 Ver detalle de COMI_OPERATIVA.csv (filas con COMSION_OPERATIVA > 0)", expanded=False):
