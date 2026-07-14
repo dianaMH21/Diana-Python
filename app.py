@@ -3,7 +3,13 @@ import streamlit as st
 from auth import login_inicio
 from config import APP_LAYOUT, APP_TITLE
 from reports import render_dashboard
-from ui_components import _inject_loading_overlay, inject_gerencial_theme
+from ui_components import _inject_loading_overlay
+
+try:
+    from ui_components import inject_gerencial_theme
+except ImportError:
+    def inject_gerencial_theme():
+        return None
 
 
 def main():
