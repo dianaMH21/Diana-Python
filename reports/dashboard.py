@@ -67,6 +67,54 @@ def render_dashboard():
     <style>
     div[data-testid="stSidebarNav"] {{display:none}}
 
+    div[data-testid="collapsedControl"] {{
+        position:fixed !important;
+        top:18px !important;
+        left:18px !important;
+        z-index:999999 !important;
+        width:auto !important;
+        height:auto !important;
+        display:flex !important;
+        align-items:center !important;
+        gap:8px !important;
+        padding:7px 11px !important;
+        border-radius:999px !important;
+        border:1px solid rgba(255,255,255,.50) !important;
+        background:linear-gradient(135deg,#0f4287,#6d0b8c) !important;
+        box-shadow:0 14px 34px rgba(15,23,42,.24) !important;
+        color:#fff !important;
+        backdrop-filter:blur(14px) !important;
+    }}
+    div[data-testid="collapsedControl"]::after {{
+        content:"MENÚ";
+        color:#fff;
+        font-size:11px;
+        font-weight:950;
+        letter-spacing:.12em;
+        line-height:1;
+    }}
+    div[data-testid="collapsedControl"] button {{
+        width:26px !important;
+        height:26px !important;
+        min-width:26px !important;
+        padding:0 !important;
+        border-radius:999px !important;
+        background:rgba(255,255,255,.18) !important;
+        color:#fff !important;
+    }}
+    div[data-testid="collapsedControl"] svg {{
+        color:#fff !important;
+        stroke:#fff !important;
+    }}
+    section[data-testid="stSidebar"] button[title*="sidebar"],
+    section[data-testid="stSidebar"] button[aria-label*="sidebar"],
+    section[data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"] {{
+        border-radius:999px !important;
+        background:rgba(255,255,255,.16) !important;
+        border:1px solid rgba(255,255,255,.24) !important;
+        color:#fff !important;
+    }}
+
     section[data-testid="stSidebar"] {{
         background:
             linear-gradient(145deg, rgba(15,66,135,.96) 0%, rgba(37,99,235,.76) 43%, rgba(109,11,140,.92) 100%) !important;
@@ -2324,265 +2372,6 @@ def render_dashboard():
                     except Exception as _e_rank:
                         st.warning(f"No se pudo construir Ranking Asesores: {_e_rank}")
 
-        elif opcion_factor == "💼 Comisión Operativa":
-            try:
-                set_bg(img_caratula)
-
-                st.markdown("""
-                <style>
-                .copex-header-wrap {
-                    position:relative; z-index:1;
-                    background:linear-gradient(135deg,rgba(15,66,135,0.88) 0%,rgba(109,11,140,0.78) 100%);
-                    border-radius:14px; padding:20px 28px; margin-bottom:18px;
-                    box-shadow:0 4px 20px rgba(15,66,135,0.20);
-                    border:1px solid rgba(255,255,255,0.10);
-                }
-                .copex-title { font-size:26px; font-weight:900; color:#fff; letter-spacing:0.06em; line-height:1.1; }
-                .copex-sub   { font-size:11px; color:rgba(255,255,255,0.60); letter-spacing:0.1em; text-transform:uppercase; margin-top:4px; }
-                .copex-kpi-row { position:relative; z-index:1; display:flex; gap:12px; margin:14px 0 6px 0; flex-wrap:wrap; }
-                .copex-kpi-card {
-                    position:relative; z-index:1;
-                    flex:1; min-width:160px; background:#fff; border-radius:12px;
-                    padding:16px 18px; text-align:center;
-                    box-shadow:0 3px 14px rgba(0,0,0,0.08);
-                    border-top:4px solid #0f4287;
-                }
-                .copex-kpi-label { font-size:9px; font-weight:800; color:#6b7280; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:6px; }
-                .copex-kpi-val   { font-size:28px; font-weight:900; color:#0f4287; line-height:1; }
-                .copex-kpi-sub   { font-size:9px; color:#9ca3af; margin-top:5px; font-style:italic; }
-                </style>
-                <div class="copex-header-wrap">
-                    <div class="copex-title">💼 COMISIÓN OPERATIVA</div>
-                    <div class="copex-sub">Cruce Base Pagadas (Fija + Móvil) vs. COMI_OPERATIVA.csv</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                with st.spinner("Cargando comparativo de comisión operativa..."):
-
-                    # ── Base: Ventas Pagadas Fija + Móvil (cachés ya existentes) ──
-                    if "npn_fija_cache" not in st.session_state:
-                        _tmp = construir_detalle_fija_general("Todos los meses", "Todos los meses")
-                        _tmp["_TIPO_NPN"] = "FIJA"
-                        st.session_state["npn_fija_cache"] = _tmp
-                    if "npn_movil_cache" not in st.session_state:
-                        _tmp2 = construir_resumen_movil_general("Todos los meses")
-                        _tmp2["_TIPO_NPN"] = "MOVIL"
-                        st.session_state["npn_movil_cache"] = _tmp2
-
-                    _df_fija_co  = st.session_state["npn_fija_cache"]
-                    _df_movil_co = st.session_state["npn_movil_cache"]
-
-                    if "Estado Pago" in _df_fija_co.columns:
-                        _pag_fija_mask = _df_fija_co["Estado Pago"].fillna("").astype(str).str.strip().str.upper() == "PAGADA"
-                    else:
-                        _pag_fija_mask = pd.Series([False] * len(_df_fija_co), index=_df_fija_co.index)
-                    _base_pagadas_fija = int(_pag_fija_mask.sum())
-
-                    if "Estado Pago" in _df_movil_co.columns:
-                        _pag_movil_mask = _df_movil_co["Estado Pago"].fillna("").astype(str).str.strip().str.upper() == "PAGADA"
-                    else:
-                        _pag_movil_mask = pd.Series([False] * len(_df_movil_co), index=_df_movil_co.index)
-                    _base_pagadas_movil = int(_pag_movil_mask.sum())
-
-                    _base_pagadas_total = _base_pagadas_fija + _base_pagadas_movil
-
-                    # ── COMI_OPERATIVA.csv: contar TODAS las filas (con repetidos) ──
-                    # SOT > 0 (Fija) + SEC > 0 (Móvil), filtrando COMSION_OPERATIVA > 0
-                    _df_co = cargar_csv("COMI_OPERATIVA.csv")
-
-                    _co_sot_count = 0
-                    _co_sec_count = 0
-                    _co_comision_total = 0.0
-                    _col_com_op = None
-                    _mask_com_op = pd.Series(dtype=bool)
-
-                    if not _df_co.empty:
-                        _df_co.columns = _df_co.columns.str.strip()
-                        _col_com_op = next((c for c in _df_co.columns if c.strip().upper() == "COMSION_OPERATIVA"), None)
-                        _col_sot_co = next((c for c in _df_co.columns if c.strip().upper() == "SOT"), None)
-                        _col_sec_co = next((c for c in _df_co.columns if c.strip().upper() == "SEC"), None)
-
-                        if _col_com_op:
-                            _com_op_num = pd.to_numeric(_df_co[_col_com_op], errors="coerce").fillna(0)
-                            _mask_com_op = _com_op_num > 0
-
-                            if _col_sot_co:
-                                _mask_sot = _mask_com_op & _df_co[_col_sot_co].notna() & (_df_co[_col_sot_co].astype(str).str.strip() != "")
-                                _co_sot_count = int(_mask_sot.sum())
-
-                            if _col_sec_co:
-                                _mask_sec = _mask_com_op & _df_co[_col_sec_co].notna() & (_df_co[_col_sec_co].astype(str).str.strip() != "")
-                                _co_sec_count = int(_mask_sec.sum())
-
-                            _co_comision_total = float(_com_op_num[_mask_com_op].sum())
-                        else:
-                            _mask_com_op = pd.Series([False] * len(_df_co), index=_df_co.index)
-
-                    # Solo SEC count (ignora SOT para evitar doble conteo cuando una venta tiene ambos)
-                    _co_total = _co_sec_count
-                    _diferencia = _co_total - _base_pagadas_total
-
-                if _df_co.empty:
-                    st.warning("No se encontró el archivo COMI_OPERATIVA.csv. Verifica que esté en la carpeta de datos.")
-                else:
-                    st.markdown(f"""
-                    <div class="copex-kpi-row">
-                        <div class="copex-kpi-card" style="border-top-color:#059669;">
-                            <div class="copex-kpi-label">Pagadas Base (Fija+Móvil)</div>
-                            <div class="copex-kpi-val" style="color:#059669;">{_base_pagadas_total:,}</div>
-                            <div class="copex-kpi-sub">Fija: {_base_pagadas_fija:,} · Móvil: {_base_pagadas_movil:,}</div>
-                        </div>
-                        <div class="copex-kpi-card" style="border-top-color:#0891b2;">
-                            <div class="copex-kpi-label">Comisión Operativa (Total)</div>
-                            <div class="copex-kpi-val" style="color:#0891b2;">{_co_total:,}</div>
-                            <div class="copex-kpi-sub">SEC únicas (móvil) · SOT ref: {_co_sot_count:,}</div>
-                        </div>
-                        <div class="copex-kpi-card" style="border-top-color:{'#dc2626' if _diferencia > 0 else '#7c3aed'};">
-                            <div class="copex-kpi-label">Diferencia</div>
-                            <div class="copex-kpi-val" style="color:{'#dc2626' if _diferencia > 0 else '#7c3aed'};">{_diferencia:+,}</div>
-                            <div class="copex-kpi-sub">Comi.Operativa − Base Pagadas</div>
-                        </div>
-                        <div class="copex-kpi-card" style="border-top-color:#7c3aed;">
-                            <div class="copex-kpi-label">Monto Comisión Operativa</div>
-                            <div class="copex-kpi-val" style="color:#7c3aed;font-size:22px;">{formatear_moneda(_co_comision_total)}</div>
-                            <div class="copex-kpi-sub">Suma COMSION_OPERATIVA &gt; 0</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    st.caption(
-                        "📌 **Lógica:** Pagadas Base = ventas con Estado Pago = PAGADA en Detalle Fija/Móvil General. "
-                        "Comisión Operativa = se cuentan **todas** las filas (con repetidos) de COMI_OPERATIVA.csv donde "
-                        "SOT (Fija) o SEC (Móvil) tienen valor, filtrando solo COMSION_OPERATIVA > 0."
-                    )
-
-                    # ── Gráfico línea de tiempo ──────────
-                    import streamlit.components.v1 as _stc_co_chart
-                    _col_fecha_co = next((c for c in _df_co.columns if c.strip().upper() in [
-                        "FECHA_ACTIVACION","FECHA ACTIVACION","FECHA_INSTALACION","FECHA INSTALACION",
-                        "FECHA_OPERACION","FECHA OPERACION","FECHA","FECHA_PAGO","FECHA PAGO"]), None)
-                    if _col_fecha_co and _col_com_op and not _df_co.empty:
-                        _df_chart = _df_co[_mask_com_op].copy()
-                        _df_chart["_FECHA_DT"] = pd.to_datetime(_df_chart[_col_fecha_co], errors="coerce", dayfirst=True)
-                        _df_chart = _df_chart.dropna(subset=["_FECHA_DT"])
-                        _df_chart["_COM_NUM"] = pd.to_numeric(_df_chart[_col_com_op], errors="coerce").fillna(0)
-                        _df_chart["_MES"] = _df_chart["_FECHA_DT"].dt.to_period("M").astype(str)
-                        _grp_chart = (_df_chart.groupby("_MES").agg(Registros=("_MES","count"), Comision=("_COM_NUM","sum")).reset_index().sort_values("_MES"))
-                        if not _grp_chart.empty:
-                            _meses_js = str(_grp_chart["_MES"].tolist())
-                            _regs_js  = str(_grp_chart["Registros"].tolist())
-                            _comis_js = str(_grp_chart["Comision"].round(2).tolist())
-                            _max_reg  = int(_grp_chart["Registros"].max()) or 1
-                            _max_com  = float(_grp_chart["Comision"].max()) or 1
-                            _chart_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    *{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:'Segoe UI',sans-serif;background:#f8fafc;padding:16px;}}
-    .ct{{font-size:13px;font-weight:800;color:#0f4287;letter-spacing:.05em;margin-bottom:12px;}}
-    .cw{{position:relative;width:100%;height:240px;}}canvas{{width:100%!important;height:100%!important;}}
-    .leg{{display:flex;gap:20px;margin-top:10px;}}.li{{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#374151;}}
-    .ld{{width:12px;height:12px;border-radius:50%;}}
-    .tb{{position:absolute;background:rgba(15,30,60,.92);color:#fff;border-radius:10px;padding:10px 14px;font-size:12px;pointer-events:none;display:none;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:99;min-width:160px;}}
-    .tt{{font-weight:800;font-size:13px;margin-bottom:6px;color:#93c5fd;}}
-    .tr{{display:flex;justify-content:space-between;gap:16px;margin:2px 0;}}
-    .tl{{color:rgba(255,255,255,.7);font-weight:600;}}.tv{{font-weight:800;}}
-    </style></head><body><div class="ct">&#128200; Línea de Tiempo — Comisión Operativa por Mes</div>
-    <div class="cw"><canvas id="coC"></canvas>
-    <div class="tb" id="tip"><div class="tt" id="tm"></div>
-    <div class="tr"><span class="tl">Registros</span><span class="tv" id="tr1" style="color:#60a5fa"></span></div>
-    <div class="tr"><span class="tl">Comisi\xc3\xb3n</span><span class="tv" id="tr2" style="color:#34d399"></span></div></div></div>
-    <div class="leg"><div class="li"><div class="ld" style="background:#1976d2"></div>Registros (eje izq.)</div>
-    <div class="li"><div class="ld" style="background:#00897b"></div>Comisi\xc3\xb3n S/ (eje der.)</div></div>
-    <script>
-    var M={_meses_js},R={_regs_js},C={_comis_js},mR={_max_reg},mC={_max_com};
-    var cv=document.getElementById('coC'),tip=document.getElementById('tip'),ctx=cv.getContext('2d');
-    var PL=56,PT=16,PB=38,PR=56,n=M.length;
-    function fmt(v){{return Math.round(v).toLocaleString('es-PE');}}
-    function fmtS(v){{return 'S/ '+v.toLocaleString('es-PE',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}
-    function W(){{return cv.offsetWidth;}}function H(){{return cv.offsetHeight;}}
-    function xP(i){{return PL+(i/(n-1||1))*(W()-PL-PR);}}
-    function yP(v,mx){{return PT+(H()-PT-PB)*(1-v/(mx||1));}}
-    function resize(){{
-      cv.width=cv.parentElement.clientWidth*devicePixelRatio;
-      cv.height=cv.parentElement.clientHeight*devicePixelRatio;
-      cv.style.width=cv.parentElement.clientWidth+'px';
-      cv.style.height=cv.parentElement.clientHeight+'px';
-      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);draw();
-    }}
-    function draw(){{
-      ctx.clearRect(0,0,W(),H());
-      ctx.strokeStyle='rgba(0,0,0,0.07)';ctx.lineWidth=1;
-      for(var g=0;g<=4;g++){{var gy=PT+(H()-PT-PB)*g/4;ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(W()-PR,gy);ctx.stroke();}}
-      ctx.beginPath();
-      for(var i=0;i<n;i++){{var x=xP(i),y=yP(R[i],mR);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}
-      ctx.lineTo(xP(n-1),H()-PB);ctx.lineTo(xP(0),H()-PB);ctx.closePath();
-      var g2=ctx.createLinearGradient(0,PT,0,H()-PB);
-      g2.addColorStop(0,'rgba(25,118,210,.2)');g2.addColorStop(1,'rgba(25,118,210,.01)');
-      ctx.fillStyle=g2;ctx.fill();
-      ctx.lineJoin='round';ctx.lineCap='round';
-      ctx.strokeStyle='#1976d2';ctx.lineWidth=2.5;ctx.setLineDash([]);
-      ctx.beginPath();for(var i=0;i<n;i++){{var x=xP(i),y=yP(R[i],mR);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}ctx.stroke();
-      ctx.strokeStyle='#00897b';ctx.lineWidth=2.5;ctx.setLineDash([6,3]);
-      ctx.beginPath();for(var i=0;i<n;i++){{var x=xP(i),y=yP(C[i],mC);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}}ctx.stroke();
-      ctx.setLineDash([]);
-      for(var i=0;i<n;i++){{
-        [{{x:xP(i),y:yP(R[i],mR),s:'#1976d2'}},{{x:xP(i),y:yP(C[i],mC),s:'#00897b'}}].forEach(function(d){{
-          ctx.beginPath();ctx.arc(d.x,d.y,3.5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
-          ctx.strokeStyle=d.s;ctx.lineWidth=2;ctx.stroke();
-        }});
-      }}
-      ctx.fillStyle='#6b7280';ctx.font='9px Segoe UI';ctx.textAlign='center';
-      var step=Math.max(1,Math.ceil(n/8));
-      for(var i=0;i<n;i+=step){{ctx.fillText(M[i],xP(i),H()-PB+14);}}
-      ctx.textAlign='right';ctx.fillStyle='#1976d2';ctx.font='9px Segoe UI';
-      for(var g=0;g<=4;g++){{var v=mR*(4-g)/4,gy=PT+(H()-PT-PB)*g/4;ctx.fillText(fmt(v),PL-5,gy+3);}}
-      ctx.textAlign='left';ctx.fillStyle='#00897b';
-      for(var g=0;g<=4;g++){{var v=mC*(4-g)/4,gy=PT+(H()-PT-PB)*g/4;ctx.fillText(fmt(v),W()-PR+5,gy+3);}}
-    }}
-    cv.addEventListener('mousemove',function(e){{
-      var r=cv.getBoundingClientRect(),mx=e.clientX-r.left;
-      var idx=Math.round((mx-PL)/(W()-PL-PR)*(n-1));
-      idx=Math.max(0,Math.min(idx,n-1));
-      if(Math.abs(mx-xP(idx))<28){{
-        document.getElementById('tm').textContent=M[idx];
-        document.getElementById('tr1').textContent=fmt(R[idx]);
-        document.getElementById('tr2').textContent=fmtS(C[idx]);
-        var tx=xP(idx)+16,ty=e.clientY-r.top-44;
-        if(tx+160>W())tx=xP(idx)-176;
-        tip.style.left=tx+'px';tip.style.top=ty+'px';tip.style.display='block';
-        draw();
-        ctx.strokeStyle='rgba(0,0,0,.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
-        ctx.beginPath();ctx.moveTo(xP(idx),PT);ctx.lineTo(xP(idx),H()-PB);ctx.stroke();ctx.setLineDash([]);
-      }}else{{tip.style.display='none';}}
-    }});
-    cv.addEventListener('mouseleave',function(){{tip.style.display='none';draw();}});
-    window.addEventListener('resize',resize);resize();
-    </script></body></html>"""
-                            _stc_co_chart.html(_chart_html, height=320, scrolling=False)
-
-
-                    # ── Tabla detalle ────────────────────────────────────────
-                    with st.expander("📋 Ver detalle de COMI_OPERATIVA.csv (filas con COMSION_OPERATIVA > 0)", expanded=False):
-                        _cols_det = [c for c in ["DISTRIBUIDOR","SOT","SEC","PLAN_TARIFARIO","FECHA_ACTIVACION",
-                                                  "FECHA_INSTALACION","TIPO_OPERACION","DEPARTAMENTO",
-                                                  "COMSION_OPERATIVA","TOTAL"] if c in _df_co.columns]
-                        _df_det_co = _df_co[_mask_com_op][_cols_det].copy() if _col_com_op else _df_co[_cols_det].copy()
-                        if "COMSION_OPERATIVA" in _df_det_co.columns:
-                            _df_det_co["COMSION_OPERATIVA"] = pd.to_numeric(_df_det_co["COMSION_OPERATIVA"], errors="coerce").fillna(0).map(formatear_moneda)
-                        st.dataframe(_df_det_co, use_container_width=True, height=400)
-
-                        _csv_co = _df_det_co.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-                        st.download_button(
-                            "⬇️ Descargar detalle Comisión Operativa",
-                            data=_csv_co,
-                            file_name="comision_operativa_detalle.csv",
-                            mime="text/csv",
-                            key="dl_comision_operativa"
-                        )
-            except Exception as e:
-                import traceback
-                st.error(f"⚠️ Error al cargar Comisión Operativa: {e}")
-                with st.expander("Ver detalle técnico del error"):
-                    st.code(traceback.format_exc())
-
     elif seccion == "fija":
 
         if opcion == "Inicio: Reporte Comparativo FIJA":
@@ -3088,4 +2877,5 @@ def render_dashboard():
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
 
