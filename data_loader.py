@@ -4,10 +4,17 @@ import re
 import pandas as pd
 import streamlit as st
 
-from api_client import fetch_dataset
+from api_client import fetch_dataset, fetch_dvz_from_api
 from config import DATA_DIR, CSV_MAP, _DVZ_SPLIT_MAP
 
+@st.cache_data(ttl=600, show_spinner=False)
 def _leer_dvz_crudo():
+    _cache_version = "dvz_api_closed_month_v1"
+    df_api = fetch_dvz_from_api()
+    if df_api is not None and not df_api.empty:
+        df_api.columns = df_api.columns.astype(str).str.strip()
+        return df_api
+
     ruta = os.path.join(DATA_DIR, "DVZ.csv")
     if not os.path.exists(ruta):
         return pd.DataFrame()
@@ -23,7 +30,7 @@ def _leer_dvz_crudo():
                 continue
     return pd.DataFrame()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def _cargar_dvz_filtrado(nombre):
     tipo_prod, canal_clip = _DVZ_SPLIT_MAP[nombre]
     df = _leer_dvz_crudo()
@@ -37,12 +44,15 @@ def _cargar_dvz_filtrado(nombre):
     mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == canal_clip
     return df[mask_tipo & mask_clip].copy()
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def cargar_csv(nombre):
-    df_api = fetch_dataset(nombre)
-    if df_api is not None:
-        df_api.columns = df_api.columns.astype(str).str.strip()
-        return df_api
+    nombre_norm = str(nombre or "").upper()
+    usar_api_dataset = "CLARO_" not in nombre_norm and not nombre_norm.startswith("COMI_")
+    if usar_api_dataset:
+        df_api = fetch_dataset(nombre)
+        if df_api is not None:
+            df_api.columns = df_api.columns.astype(str).str.strip()
+            return df_api
 
     # Si DVZ.csv existe y el nombre corresponde a uno de los 4 archivos viejos,
     # leer siempre desde DVZ filtrado. No debe volver a leer FIJA_DC/FIJA_TELETALK/MOVIL_DC/MOVIL_TELETALK.
@@ -72,12 +82,53 @@ def cargar_csv(nombre):
     return pd.DataFrame()
 
 def get_tabla(nombre):
-    return cargar_csv(CSV_MAP.get(nombre, nombre.split(".")[-1] + ".csv"))
+    # Usar un caché en session_state para evitar volver a leer/parsear
+    # el mismo archivo en cada rerun de Streamlit (mejora al cambiar pestañas).
+    key = CSV_MAP.get(nombre, nombre.split(".")[-1] + ".csv")
+    cache = None
+    try:
+        cache = st.session_state.setdefault("_TABLE_CACHE", {})
+    except Exception:
+        # En caso de que st.session_state no esté disponible (p. ej. pruebas fuera de Streamlit),
+        # simplemente cargar el CSV cada vez.
+        return cargar_csv(key)
+    if key in cache:
+        return cache[key]
+    df = cargar_csv(key)
+    cache[key] = df
+    return df
+
+
+def preload_common_tables():
+    """Precarga las tablas más consultadas al iniciar la app para reducir pausas al cambiar pestañas."""
+    if st.session_state.get("_COMMON_TABLES_PRELOADED", False):
+        return
+
+    tablas = [
+        "dbo.CLARO_DC_FIJA",
+        "dbo.CLARO_TELETALK_FIJA",
+        "dbo.CLARO_DC_MOVIL",
+        "dbo.CLARO_TELETALK_MOVIL",
+        "[DATA DEVELZ].dbo.FIJA_DC",
+        "[DATA DEVELZ].dbo.FIJA_TELETALK",
+        "DOTACION",
+    ]
+
+    try:
+        with st.spinner("Cargando datos iniciales..."):
+            for nombre in tablas:
+                get_tabla(nombre)
+            _leer_dvz_crudo()
+            cargar_dotacion()
+    except Exception:
+        pass
+
+    st.session_state["_COMMON_TABLES_PRELOADED"] = True
 
 # =========================================================
 # DOTACIÓN — cruce para columna COLA
 # =========================================================
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def cargar_dotacion():
     """
     Carga DOTACION.csv y retorna un dict {USUARIO_NORM: SEGMENTO}.

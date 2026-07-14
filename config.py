@@ -2,11 +2,39 @@
 # Ajusta estas variables via entorno cuando conectes el API o cambies rutas.
 import os
 
+
+def _load_local_env():
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if not os.path.exists(env_path):
+        return
+
+    with open(env_path, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                os.environ.setdefault(key, value)
+
+
+_load_local_env()
+
 APP_TITLE = os.getenv("DASHBOARD_APP_TITLE", "Dashboard Teletalk Digital")
 APP_LAYOUT = os.getenv("DASHBOARD_APP_LAYOUT", "wide")
 DATA_SOURCE = os.getenv("DASHBOARD_DATA_SOURCE", "csv").lower()  # csv | api
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "").rstrip("/")
 API_TOKEN = os.getenv("DASHBOARD_API_TOKEN", "")
+
+# CRM Develz API. These values are used only when DASHBOARD_DATA_SOURCE=api.
+CRM_LOGIN_URL = os.getenv("CRM_LOGIN_URL", "https://crm.develz.com/api/auth/login")
+CRM_REPORT_URL = os.getenv("CRM_REPORT_URL", "https://crm.develz.com/api/reports/get/products")
+CRM_EMAIL = os.getenv("CRM_EMAIL", "")
+CRM_PASSWORD = os.getenv("CRM_PASSWORD", "")
+CRM_TIMEOUT = int(os.getenv("CRM_TIMEOUT", "45"))
+CRM_FILTERS = os.getenv("CRM_FILTERS", "")
 
 DATA_DIR = os.getenv("DASHBOARD_DATA_DIR", ".")
 MESES_ES = {1:'Enero',2:'Febrero',3:'Marzo',4:'Abril',5:'Mayo',6:'Junio',
