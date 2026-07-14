@@ -1,6 +1,7 @@
 ﻿from .common import *
 from .fija import *
 from .movil import *
+from urllib.parse import quote
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -46,6 +47,34 @@ def render_dashboard():
         [SEP_FACTOR] + OPCIONES_FACTOR
     )
 
+    _nav_q = None
+    try:
+        _nav_q = st.query_params.get("nav")
+    except Exception:
+        _nav_q = None
+    if isinstance(_nav_q, list):
+        _nav_q = _nav_q[0] if _nav_q else None
+    if _nav_q in todas_opciones and _nav_q not in SEPARADORES:
+        st.session_state["radio_unico"] = _nav_q
+        st.session_state["ultima_seleccion"] = _nav_q
+        try:
+            del st.query_params["nav"]
+        except Exception:
+            pass
+
+    _mini_items = [
+        ("📡", "Inicio Fija", "Inicio: Reporte Comparativo FIJA"),
+        ("🧾", "Detalle Fija", "Detalle Fija General FIJA"),
+        ("📱", "Inicio Móvil", "Inicio: Reporte Comparativo MOVIL"),
+        ("📋", "Detalle Móvil", "Detalle Móvil General"),
+        ("📊", "NPN", "📊 Resumen NPN"),
+    ]
+    _mini_nav_html = "".join(
+        f'<a class="dash-mini-item" title="{_html.escape(title)}" href="?nav={quote(option)}">'
+        f'<span>{icon}</span><em>{_html.escape(title)}</em></a>'
+        for icon, title, option in _mini_items
+    )
+
     # Posiciones de los separadores (1-indexed para CSS nth-child)
     idx_sep_fija   = 1
     idx_sep_movil  = len(OPCIONES_FIJA) + 2
@@ -67,52 +96,85 @@ def render_dashboard():
     <style>
     div[data-testid="stSidebarNav"] {{display:none}}
 
-    div[data-testid="collapsedControl"] {{
-        position:fixed !important;
-        top:18px !important;
-        left:18px !important;
-        z-index:999999 !important;
-        width:auto !important;
-        height:auto !important;
-        display:flex !important;
-        align-items:center !important;
-        gap:8px !important;
-        padding:7px 11px !important;
-        border-radius:999px !important;
-        border:1px solid rgba(255,255,255,.50) !important;
-        background:linear-gradient(135deg,#0f4287,#6d0b8c) !important;
-        box-shadow:0 14px 34px rgba(15,23,42,.24) !important;
-        color:#fff !important;
-        backdrop-filter:blur(14px) !important;
+    .dash-mini-rail {{
+        position:fixed;
+        left:12px;
+        top:86px;
+        z-index:4;
+        width:58px;
+        padding:10px 8px;
+        border-radius:18px;
+        border:1px solid rgba(255,255,255,.42);
+        background:linear-gradient(180deg,rgba(15,66,135,.94),rgba(109,11,140,.90));
+        box-shadow:0 18px 38px rgba(15,23,42,.22);
+        backdrop-filter:blur(14px);
+        display:flex;
+        flex-direction:column;
+        gap:9px;
     }}
-    div[data-testid="collapsedControl"]::after {{
-        content:"MENÚ";
+    .dash-mini-rail::before {{
+        content:"TT";
+        display:grid;
+        place-items:center;
+        width:38px;
+        height:30px;
+        margin:0 auto 4px auto;
+        border-radius:10px;
         color:#fff;
         font-size:11px;
         font-weight:950;
-        letter-spacing:.12em;
+        letter-spacing:.08em;
+        background:rgba(255,255,255,.14);
+        border:1px solid rgba(255,255,255,.18);
+    }}
+    .dash-mini-item {{
+        width:40px;
+        height:40px;
+        margin:0 auto;
+        border-radius:13px;
+        display:grid;
+        place-items:center;
+        text-decoration:none !important;
+        color:#fff !important;
+        border:1px solid rgba(255,255,255,.16);
+        background:rgba(255,255,255,.10);
+        transition:transform .14s ease, background .14s ease, border-color .14s ease;
+        position:relative;
+    }}
+    .dash-mini-item:hover {{
+        transform:translateX(3px);
+        background:rgba(255,255,255,.22);
+        border-color:rgba(255,255,255,.36);
+    }}
+    .dash-mini-item span {{
+        font-size:17px;
         line-height:1;
     }}
-    div[data-testid="collapsedControl"] button {{
-        width:26px !important;
-        height:26px !important;
-        min-width:26px !important;
-        padding:0 !important;
-        border-radius:999px !important;
-        background:rgba(255,255,255,.18) !important;
-        color:#fff !important;
+    .dash-mini-item em {{
+        position:absolute;
+        left:48px;
+        top:50%;
+        transform:translateY(-50%);
+        display:none;
+        white-space:nowrap;
+        padding:8px 10px;
+        border-radius:10px;
+        background:#0f172a;
+        color:#fff;
+        font-style:normal;
+        font-size:11px;
+        font-weight:850;
+        box-shadow:0 12px 24px rgba(15,23,42,.22);
     }}
-    div[data-testid="collapsedControl"] svg {{
-        color:#fff !important;
-        stroke:#fff !important;
+    .dash-mini-item:hover em {{
+        display:block;
     }}
-    section[data-testid="stSidebar"] button[title*="sidebar"],
-    section[data-testid="stSidebar"] button[aria-label*="sidebar"],
-    section[data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"] {{
-        border-radius:999px !important;
-        background:rgba(255,255,255,.16) !important;
-        border:1px solid rgba(255,255,255,.24) !important;
-        color:#fff !important;
+    @media (min-width: 761px) {{
+        body:has(section[data-testid="stSidebar"][aria-expanded="true"]) .dash-mini-rail {{
+            z-index:0;
+            opacity:0;
+            pointer-events:none;
+        }}
     }}
 
     section[data-testid="stSidebar"] {{
@@ -291,6 +353,8 @@ def render_dashboard():
     }}
     </style>
     """, unsafe_allow_html=True)
+
+    st.markdown(f'<nav class="dash-mini-rail" aria-label="Menu compacto">{_mini_nav_html}</nav>', unsafe_allow_html=True)
 
     _usuario_menu = st.session_state.get("usuario_logueado", "Usuario")
     st.sidebar.markdown(f"""
@@ -2877,5 +2941,10 @@ def render_dashboard():
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
+
+
+
+
 
 

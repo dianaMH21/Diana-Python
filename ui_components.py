@@ -36,17 +36,10 @@ def inject_gerencial_theme():
         max-width: 1560px;
     }
 
-    header[data-testid="stHeader"],
-    div[data-testid="stToolbar"],
-    div[data-testid="stDecoration"],
-    div[data-testid="stStatusWidget"] {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-    }
-
-    .stApp {
-        margin-top: 0 !important;
+    header[data-testid="stHeader"] {
+        background: rgba(255, 255, 255, .72) !important;
+        backdrop-filter: blur(12px) !important;
+        border-bottom: 1px solid rgba(219, 227, 239, .65) !important;
     }
 
     h1, h2, h3 {
