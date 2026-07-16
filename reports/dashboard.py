@@ -20,6 +20,36 @@ def _leer_csv_npn_local_cacheado(nombre, mtime=None):
                 continue
     return pd.DataFrame()
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _leer_operativa_teletalk_cacheado(mtime=None):
+    candidatos = [
+        "OPERATIVA_TELETALK.csv",
+        "OPERATIVA_TELETALK.xlsx",
+        "OPERATIVA_TELETALK.xls",
+    ]
+    ruta = next((os.path.join(DATA_DIR, n) for n in candidatos if os.path.exists(os.path.join(DATA_DIR, n))), None)
+    if not ruta:
+        return pd.DataFrame()
+    ext = os.path.splitext(ruta)[1].lower()
+    if ext in {".xlsx", ".xls"}:
+        try:
+            df = pd.read_excel(ruta)
+            df.columns = df.columns.astype(str).str.strip()
+            return df
+        except Exception:
+            return pd.DataFrame()
+    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
+        for sep in [";", ",", "\t"]:
+            try:
+                df = pd.read_csv(ruta, encoding=enc, sep=sep, engine="python", on_bad_lines="skip")
+                df.columns = df.columns.astype(str).str.strip()
+                if len(df.columns) > 1:
+                    return df
+            except Exception:
+                continue
+    return pd.DataFrame()
+
 def render_dashboard():
     _inject_tabs_card_style()
     OPCIONES_FIJA = [
@@ -34,6 +64,7 @@ def render_dashboard():
 
     OPCIONES_FACTOR = [
         "📊 Resumen NPN",
+        "💼 Comisión Operativa",
     ]
 
     SEP_FIJA   = "📡 FIJA"
@@ -68,6 +99,7 @@ def render_dashboard():
         ("📱", "Inicio Móvil", "Inicio: Reporte Comparativo MOVIL"),
         ("📋", "Detalle Móvil", "Detalle Móvil General"),
         ("📊", "NPN", "📊 Resumen NPN"),
+        ("💼", "Comisión Operativa", "💼 Comisión Operativa"),
     ]
     _mini_nav_html = "".join(
         f'<a class="dash-mini-item" title="{_html.escape(title)}" href="?nav={quote(option)}">'
@@ -1201,7 +1233,7 @@ def render_dashboard():
                     for _canal_csv, _archivo_csv in [("D&C", "CLARO_DC_FIJA.csv"), ("TELETALK", "CLARO_TELETALK_FIJA.csv")]:
                         if _canal_csv not in _canales_npn:
                             continue
-                        _df_bf = _leer_csv_npn_local(_archivo_csv)
+                        _df_bf = _leer_csv_npn_local_cacheado(_archivo_csv)
                         if _df_bf.empty:
                             continue
                         _col_sot_bf = _npn_col_local(_df_bf, ["SOT", "Sot", "sot"])
@@ -1229,7 +1261,7 @@ def render_dashboard():
                     for _canal_csv, _archivo_csv in [("D&C", "CLARO_DC_MOVIL.csv"), ("TELETALK", "CLARO_TELETALK_MOVIL.csv")]:
                         if _canal_csv not in _canales_npn:
                             continue
-                        _df_bm = _leer_csv_npn_local(_archivo_csv)
+                        _df_bm = _leer_csv_npn_local_cacheado(_archivo_csv)
                         if _df_bm.empty:
                             continue
                         _col_sec_bm = _npn_col_local(_df_bm, ["SEC", "Sec", "sec"])
@@ -1271,7 +1303,7 @@ def render_dashboard():
                 _comision_6m = 0.0
 
                 if _usar_fija_csv and _sots_base_csv:
-                    _df_cf2_csv = _leer_csv_npn_local("CLARO_DC_FIJA_SEGUNDA_CAIDA.csv")
+                    _df_cf2_csv = _leer_csv_npn_local_cacheado("CLARO_DC_FIJA_SEGUNDA_CAIDA.csv")
                     _col_sot_cf2 = _npn_col_local(_df_cf2_csv, ["SOT", "Sot", "sot"])
                     _col_com_cf2 = _npn_col_local(_df_cf2_csv, ["COM ETAPA", "COM_ETAPA", "Com Etapa", "COMISION ETAPA", "COMISIÓN ETAPA", "COMISIÃ“N ETAPA", "COMISION", "COMISIÓN", "COMISIÃ“N", "Comision"])
                     if not _df_cf2_csv.empty and _col_sot_cf2 and _col_com_cf2:
@@ -1283,7 +1315,7 @@ def render_dashboard():
                         _comision_3m += float(_df_cf2_csv["_COM_NPN"].sum())
 
                 if _usar_movil_csv and _secs_base_csv:
-                    _df_cm2_csv = _leer_csv_npn_local("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
+                    _df_cm2_csv = _leer_csv_npn_local_cacheado("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv")
                     _col_sec_cm2 = _npn_col_local(_df_cm2_csv, ["SEC", "Sec", "sec"])
                     _col_com_cm2 = _npn_col_local(_df_cm2_csv, ["COMISION", "COMISIÓN", "COMISIÃ“N", "Comision", "Comisión", "ComisiÃ³n", "MONTO"])
                     if not _df_cm2_csv.empty and _col_sec_cm2 and _col_com_cm2:
@@ -1294,7 +1326,7 @@ def render_dashboard():
                         _netas_3m_movil = int((_df_cm2_csv["_SEC_NPN"] != "").sum())
                         _comision_3m += float(_df_cm2_csv["_COM_NPN"].sum())
 
-                    _df_cm3_csv = _leer_csv_npn_local("CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv")
+                    _df_cm3_csv = _leer_csv_npn_local_cacheado("CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv")
                     _col_sec_cm3 = _npn_col_local(_df_cm3_csv, ["SEC", "Sec", "sec"])
                     _col_com_cm3 = _npn_col_local(_df_cm3_csv, ["COMISION", "COMISIÓN", "COMISIÃ“N", "Comision", "Comisión", "ComisiÃ³n", "MONTO"])
                     if not _df_cm3_csv.empty and _col_sec_cm3 and _col_com_cm3:
@@ -2436,6 +2468,116 @@ def render_dashboard():
                     except Exception as _e_rank:
                         st.warning(f"No se pudo construir Ranking Asesores: {_e_rank}")
 
+        elif opcion_factor == "💼 Comisión Operativa":
+            set_bg(img_caratula)
+            st.markdown("""
+            <style>
+            .op-header-wrap {display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(15,66,135,.90),rgba(109,11,140,.82));border-radius:14px;padding:20px 28px;margin-bottom:18px;box-shadow:0 4px 20px rgba(15,66,135,.20);border:1px solid rgba(255,255,255,.12);}
+            .op-kicker {font-size:10px;font-weight:900;color:rgba(255,255,255,.68);letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;}
+            .op-title {font-size:26px;font-weight:950;color:#fff;letter-spacing:.06em;line-height:1.1;}
+            .op-sub {font-size:11px;color:rgba(255,255,255,.66);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
+            .op-badge {display:inline-block;color:#fff;font-weight:900;font-size:11px;border-radius:999px;padding:5px 13px;margin:3px;border:1.5px solid rgba(255,255,255,.32);background:rgba(255,255,255,.12);}
+            div[data-testid="stVerticalBlock"]:has(div.op-filter-anchor) {background:rgba(255,255,255,.78);border:1px solid rgba(15,66,135,.12);border-radius:14px;padding:16px 18px 12px 18px;margin:4px 0 14px 0;box-shadow:0 14px 34px rgba(15,23,42,.08);backdrop-filter:blur(8px);}
+            .op-kpi-row {display:flex;gap:12px;margin:14px 0 16px 0;flex-wrap:wrap;}
+            .op-kpi-card {flex:1;min-width:160px;background:rgba(255,255,255,.96);border-radius:12px;padding:16px 18px;text-align:left;box-shadow:0 3px 14px rgba(0,0,0,.08);border-top:4px solid #0f4287;}
+            .op-kpi-label {font-size:9px;font-weight:900;color:#64748b;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px;}
+            .op-kpi-val {font-size:27px;font-weight:950;color:#0f4287;line-height:1.05;}
+            .op-kpi-sub {font-size:10px;color:#64748b;margin-top:6px;font-weight:800;}
+            </style>
+            <div class="op-header-wrap">
+                <div><div class="op-kicker">Módulo Ejecutivo</div><div class="op-title">COMISIÓN OPERATIVA</div><div class="op-sub">Pagos mensuales desde OPERATIVA_TELETALK</div></div>
+                <div style="text-align:right;"><span class="op-badge">D&amp;C Digital Group</span><br><span class="op-badge">Teletalk SAC</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            _ruta_op = next((os.path.join(DATA_DIR, n) for n in ["OPERATIVA_TELETALK.csv", "OPERATIVA_TELETALK.xlsx", "OPERATIVA_TELETALK.xls"] if os.path.exists(os.path.join(DATA_DIR, n))), None)
+            _mtime_op = os.path.getmtime(_ruta_op) if _ruta_op else None
+            _df_op = _leer_operativa_teletalk_cacheado(_mtime_op)
+
+            def _op_col(df, opciones):
+                return encontrar_columna(df, opciones) if df is not None and not df.empty else None
+
+            def _op_clean_id(serie):
+                return serie.fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+
+            def _op_parse_fecha(serie):
+                s = _op_clean_id(serie)
+                s8 = s.where(s.str.match(r"^\d{8}$"), "")
+                dt = pd.to_datetime(s8, format="%Y%m%d", errors="coerce")
+                fallback = pd.to_datetime(serie, errors="coerce", dayfirst=True)
+                return dt.fillna(fallback)
+
+            def _op_num(serie):
+                raw = serie.fillna("").astype(str).str.replace("S/", "", regex=False).str.replace(" ", "", regex=False)
+                parsed = pd.to_numeric(raw, errors="coerce")
+                alt = pd.to_numeric(raw.str.replace(".", "", regex=False).str.replace(",", ".", regex=False), errors="coerce")
+                return parsed.fillna(alt).fillna(0)
+
+            if _df_op.empty:
+                st.warning("No se encontró OPERATIVA_TELETALK.csv/xlsx o no se pudo leer. Verifica que esté en la carpeta de datos.")
+            else:
+                _df_op = _df_op.copy()
+                _df_op.columns = _df_op.columns.astype(str).str.strip()
+                _col_dist = _op_col(_df_op, ["DISTRIBUIDOR", "Distribuidor"])
+                _col_linea = _op_col(_df_op, ["NRO_LINEA", "NRO LINEA", "Nro Linea"])
+                _col_sot = _op_col(_df_op, ["SOT", "Sot"])
+                _col_fact = _op_col(_df_op, ["FECHA_ACTIVACION", "FECHA ACTIVACION", "Fecha Activacion"])
+                _col_finst = _op_col(_df_op, ["FECHA_INSTALACION", "FECHA INSTALACION", "Fecha Instalacion"])
+                _col_total = _op_col(_df_op, ["TOTAL", "Total"])
+
+                if not (_col_dist and _col_total):
+                    st.error("OPERATIVA_TELETALK no tiene las columnas mínimas requeridas: DISTRIBUIDOR y TOTAL.")
+                else:
+                    _dist_norm = _df_op[_col_dist].fillna("").astype(str).str.upper()
+                    _df_op["Canal"] = "OTROS"
+                    _df_op.loc[_dist_norm.str.contains("DYC|D&C|DIGITAL", regex=True, na=False), "Canal"] = "D&C"
+                    _df_op.loc[_dist_norm.str.contains("TELETALK", regex=False, na=False), "Canal"] = "Teletalk"
+                    _sot_ok = _op_clean_id(_df_op[_col_sot]) != "" if _col_sot else pd.Series(False, index=_df_op.index)
+                    _linea_ok = _op_clean_id(_df_op[_col_linea]) != "" if _col_linea else pd.Series(False, index=_df_op.index)
+                    _df_op["Servicio"] = "FIJA"
+                    _df_op.loc[(~_sot_ok) & _linea_ok, "Servicio"] = "MOVIL"
+                    _dt_act = _op_parse_fecha(_df_op[_col_fact]) if _col_fact else pd.Series(pd.NaT, index=_df_op.index)
+                    _dt_inst = _op_parse_fecha(_df_op[_col_finst]) if _col_finst else pd.Series(pd.NaT, index=_df_op.index)
+                    _df_op["_FECHA_BASE"] = _dt_inst.where(_df_op["Servicio"].eq("FIJA"), _dt_act).fillna(_dt_act).fillna(_dt_inst)
+                    _df_op["Fecha usada"] = "Instalación"
+                    _df_op.loc[_df_op["Servicio"].eq("MOVIL"), "Fecha usada"] = "Activación"
+                    _df_op.loc[_df_op["_FECHA_BASE"].eq(_dt_act) & _dt_inst.isna(), "Fecha usada"] = "Activación"
+                    _df_op.loc[_df_op["_FECHA_BASE"].eq(_dt_inst) & _dt_act.isna(), "Fecha usada"] = "Instalación"
+                    _df_op = _df_op[_df_op["_FECHA_BASE"].notna()].copy()
+                    _df_op["Mes"] = _df_op["_FECHA_BASE"].apply(lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                    _df_op["_SORT"] = _df_op["_FECHA_BASE"].dt.year * 100 + _df_op["_FECHA_BASE"].dt.month
+                    _df_op["Total pagado"] = _op_num(_df_op[_col_total])
+                    _meses_op = _df_op[["Mes", "_SORT"]].drop_duplicates().sort_values("_SORT")["Mes"].tolist()
+                    st.markdown('<div class="op-filter-anchor"></div>', unsafe_allow_html=True)
+                    _c1, _c2, _c3 = st.columns(3)
+                    with _c1:
+                        _f_serv_op = st.selectbox("Servicio", ["Todos", "FIJA", "MOVIL"], key="op_servicio")
+                    with _c2:
+                        _f_canal_op = st.multiselect("Canal", ["D&C", "Teletalk"], default=[], placeholder="Todos los canales", key="op_canal")
+                    with _c3:
+                        _f_mes_op = st.multiselect("Mes", _meses_op, default=[], placeholder="Todos los meses", key="op_mes")
+                    _df_fil = _df_op.copy()
+                    if _f_serv_op != "Todos": _df_fil = _df_fil[_df_fil["Servicio"] == _f_serv_op]
+                    if _f_canal_op: _df_fil = _df_fil[_df_fil["Canal"].isin(_f_canal_op)]
+                    if _f_mes_op: _df_fil = _df_fil[_df_fil["Mes"].isin(_f_mes_op)]
+                    _total_op = float(_df_fil["Total pagado"].sum()) if not _df_fil.empty else 0.0
+                    _reg_op = int(len(_df_fil))
+                    _fija_op = float(_df_fil.loc[_df_fil["Servicio"].eq("FIJA"), "Total pagado"].sum()) if not _df_fil.empty else 0.0
+                    _movil_op = float(_df_fil.loc[_df_fil["Servicio"].eq("MOVIL"), "Total pagado"].sum()) if not _df_fil.empty else 0.0
+                    _prom_op = (_total_op / _reg_op) if _reg_op else 0.0
+                    st.markdown(f"""
+                    <div class="op-kpi-row">
+                        <div class="op-kpi-card" style="border-top-color:#0f4287;"><div class="op-kpi-label">Total pagado</div><div class="op-kpi-val">S/ {_total_op:,.2f}</div><div class="op-kpi-sub">Suma columna TOTAL</div></div>
+                        <div class="op-kpi-card" style="border-top-color:#059669;"><div class="op-kpi-label">Registros</div><div class="op-kpi-val">{_reg_op:,}</div><div class="op-kpi-sub">Filas consideradas</div></div>
+                        <div class="op-kpi-card" style="border-top-color:#7c3aed;"><div class="op-kpi-label">Fija</div><div class="op-kpi-val">S/ {_fija_op:,.2f}</div><div class="op-kpi-sub">SOT lleno o NRO_LINEA vacío</div></div>
+                        <div class="op-kpi-card" style="border-top-color:#0891b2;"><div class="op-kpi-label">Móvil</div><div class="op-kpi-val">S/ {_movil_op:,.2f}</div><div class="op-kpi-sub">SOT vacío y NRO_LINEA lleno</div></div>
+                        <div class="op-kpi-card" style="border-top-color:#ea580c;"><div class="op-kpi-label">Promedio</div><div class="op-kpi-val">S/ {_prom_op:,.2f}</div><div class="op-kpi-sub">Total / registros</div></div>
+                    </div>""", unsafe_allow_html=True)
+                    _tabla_op = (_df_fil.groupby(["_SORT", "Mes", "Canal", "Servicio", "Fecha usada"], dropna=False).agg(Registros=("Total pagado", "size"), **{"Total pagado": ("Total pagado", "sum")}).reset_index().sort_values(["_SORT", "Canal", "Servicio"]).drop(columns=["_SORT"]))
+                    if not _tabla_op.empty:
+                        _tabla_op["Total pagado"] = _tabla_op["Total pagado"].map(lambda x: f"S/ {float(x):,.2f}")
+                    java_table(_tabla_op, height=430, title="Comisión Operativa", subtitle="Resumen por mes, canal y servicio desde OPERATIVA_TELETALK", accent="#0f4287", max_rows=500)
+
     elif seccion == "fija":
 
         if opcion == "Inicio: Reporte Comparativo FIJA":
@@ -2941,6 +3083,8 @@ def render_dashboard():
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
+
+
 
 
 
