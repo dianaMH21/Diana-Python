@@ -993,16 +993,48 @@ def _sumar_comision_real_unica(df):
     if df is None or df.empty or "COMISION_REAL" not in df.columns: return 0.0
     return float(pd.to_numeric(df["COMISION_REAL"], errors="coerce").fillna(0).sum())
 
+def _normalizar_producto_movil_general(serie):
+    s = serie.fillna("").astype(str).str.strip()
+    s = s.str.replace("\u00a0", " ", regex=False)
+    s = s.str.replace(r"\s+", " ", regex=True)
+    s = s.str.upper()
+    for a, b in [("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"), ("Ü", "U")]:
+        s = s.str.replace(a, b, regex=False)
+    return s
+
+def _filtrar_productos_brutos_movil_general(df):
+    col_producto = encontrar_columna_flexible(df, [
+        "Productos - Producto Especificacion",
+        "Productos - Producto Especificación",
+        "Productos - producto Especificacion",
+        "Productos - producto Especificación",
+        "PRODUCTOS - PRODUCTO ESPECIFICACION",
+        "PRODUCTOS - PRODUCTO ESPECIFICACIÓN",
+    ])
+    if not col_producto:
+        return df
+
+    excluidos = {
+        "CHIP PREPAGO",
+        "IFI INTERNET INALAMBRICO",
+        "OLO INTERNET PORTATIL",
+        "TFI",
+    }
+    producto_norm = _normalizar_producto_movil_general(df[col_producto])
+    return df[~producto_norm.isin(excluidos)].copy()
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False):
     """
     Detalle Móvil General consolidado.
 
     Lógica final:
-    1. MOVIL_DC/MOVIL_TELETALK solo validan DNI únicos comerciales.
+    1. MOVIL_DC/MOVIL_TELETALK, desde DVZ.csv si existe, validan ventas brutas comerciales.
     2. CLARO_DC_MOVIL/CLARO_TELETALK_MOVIL define las ventas reales pagadas/no pagadas.
     3. El Tipo Operacion sale de TRANSACCION de CLARO, no de Cliente - Tipo De Operacion.
     4. Cada fila de CLARO conserva su propia COMISION TOTAL.
+    5. Ventas brutas cuenta repetidos y excluye CHIP PREPAGO, IFI Internet Inalambrico,
+       OLO Internet Portatil y TFI desde Productos - Producto Especificacion.
     """
     configuracion_movil = [
         ("D&C", ["MOVIL_DC.csv"]),
@@ -1014,7 +1046,8 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
         df, archivo_usado = _leer_csv_movil_con_fallback(posibles_archivos, usar_api=usar_api)
         if df.empty: continue
 
-        df = df.copy()
+        df = _filtrar_productos_brutos_movil_general(df.copy())
+        if df.empty: continue
         fecha_dt, col_fecha = _obtener_fecha_venta_movil_general(df)
         documento, col_documento = _obtener_documento_movil_general(df)
         supervisor, col_supervisor = _obtener_supervisor_movil_general(df)
@@ -1064,9 +1097,7 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
                 df = df[(df["_FECHA_VENTA_MOVIL_DT"].dt.month == m) & (df["_FECHA_VENTA_MOVIL_DT"].dt.year == y)].copy()
 
         if not df.empty:
-            # Un solo registro comercial por Canal + DNI para que MOVIL no infle ventas.
             df = df.sort_values("_FECHA_VENTA_MOVIL_DT", ascending=False, na_position="last")
-            df = df.drop_duplicates(subset=["Canal", "DOCUMENTO_KEY"], keep="first")
             # Cruce DOTACION para COLA por extensión del usuario
             # BUSCARV: EXTENSION DEL USUARIO (Excel datos)  ->  USUARIO (DOTACION)  ->  SEGMENTO
             col_ext_movil = encontrar_columna(df, ["EXTENSION DEL USUARIO","EXTENSIÓN DEL USUARIO","Extension del usuario","EXTENSION","Extension"])
@@ -1086,7 +1117,6 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
     if not bases_movil: return pd.DataFrame(columns=columnas_salida + ["Venta Valida"])
 
     movil_unicos = pd.concat(bases_movil, ignore_index=True)
-    movil_unicos = movil_unicos.drop_duplicates(subset=["Canal", "DOCUMENTO_KEY"], keep="first")
 
     claro = construir_pagos_claro_movil_por_dni_mes(filtro_mes, "Todos")
 
@@ -2471,4 +2501,3 @@ def mostrar_detalle_movil_general():
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]
-
