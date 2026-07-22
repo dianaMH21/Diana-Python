@@ -2835,8 +2835,10 @@ def render_dashboard():
             </style>""", unsafe_allow_html=True)
 
             _PRODUCTOS_EXCLUIR_MOV = [
-                "CHIP PREPAGO", "PRE A PRE", "2 PLAY 800 MBPS",
-                "IFI INTERNET INALAMBRICO", "TFI", "OLO INTERNET PORTATIL"
+                "CHIP PREPAGO",
+                "IFI INTERNET INALAMBRICO",
+                "OLO INTERNET PORTATIL",
+                "TFI",
             ]
 
             _csv_local_movil_cache = {}
@@ -2977,6 +2979,7 @@ def render_dashboard():
                     _df_kpi, _ = _leer_csv_movil_con_fallback([archivo_kpi])
                     brutas = 0
                     if not _df_kpi.empty:
+                        _df_kpi = _filtrar_productos_brutos_movil_general(_df_kpi.copy())
                         _fecha_kpi, _ = _obtener_fecha_venta_movil_general(_df_kpi)
                         _df_kpi = _df_kpi.copy()
                         _df_kpi["_FECHA_KPI_DT"] = _fecha_kpi
@@ -2984,14 +2987,6 @@ def render_dashboard():
                             (_df_kpi["_FECHA_KPI_DT"].dt.month == m_num) &
                             (_df_kpi["_FECHA_KPI_DT"].dt.year  == y_num)
                         ].copy()
-                        _col_prod = encontrar_columna_flexible(_df_kpi, [
-                            "Productos - producto Especificacion", "Productos - Producto Especificacion",
-                            "PRODUCTOS - PRODUCTO ESPECIFICACION", "Producto Especificacion",
-                            "PRODUCTO ESPECIFICACION", "Producto", "PRODUCTO", "Plan", "PLAN"
-                        ])
-                        if _col_prod:
-                            _prod_norm = _df_kpi[_col_prod].fillna("").astype(str).str.strip().str.upper()
-                            _df_kpi = _df_kpi[~_prod_norm.isin([p.upper() for p in _PRODUCTOS_EXCLUIR_MOV])].copy()
                         brutas = len(_df_kpi)
 
                     # ── VENTAS NETAS / COMISION: construir_resumen_movil_general(mes) ──

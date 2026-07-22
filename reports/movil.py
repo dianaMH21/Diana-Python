@@ -1098,13 +1098,15 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
 
         if not df.empty:
             df = df.sort_values("_FECHA_VENTA_MOVIL_DT", ascending=False, na_position="last")
+            df["_ORDEN_VENTA_MOVIL"] = df.groupby(["Canal", "DOCUMENTO_KEY"]).cumcount()
             # Cruce DOTACION para COLA por extensión del usuario
             # BUSCARV: EXTENSION DEL USUARIO (Excel datos)  ->  USUARIO (DOTACION)  ->  SEGMENTO
             col_ext_movil = encontrar_columna(df, ["EXTENSION DEL USUARIO","EXTENSIÓN DEL USUARIO","Extension del usuario","EXTENSION","Extension"])
             df["COLA"] = _data_loader._agregar_cola_por_extension(df, col_ext_movil) if col_ext_movil else "EXTERNO"
             bases_movil.append(df[[
                 "Canal", "DOCUMENTO_KEY", "Documento", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR",
-                "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
+                "Departamento", "COLA", "_FECHA_VENTA_MOVIL_DT", "_FECHA_INSTALACION_DT", "_ORDEN_VENTA_MOVIL",
+                "Columna Supervisor", "Columna Tipificación", "Columna Documento Movil", "Columna Fecha Movil"
             ]])
 
     columnas_salida = [
@@ -1119,53 +1121,36 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
     movil_unicos = pd.concat(bases_movil, ignore_index=True)
 
     claro = construir_pagos_claro_movil_por_dni_mes(filtro_mes, "Todos")
-
     if not claro.empty:
-        # Solo ventas reales de CLARO cuyo DNI exista en MOVIL del mismo canal.
-        df_all = claro.merge(
-            movil_unicos,
-            on=["Canal", "DOCUMENTO_KEY"],
-            how="inner",
-            suffixes=("", "_MOVIL")
-        )
-        # Si el documento llegó de CLARO vacío por alguna razón, preservamos el de MOVIL.
-        df_all["Documento"] = df_all["Documento"].fillna(df_all.get("Documento_MOVIL", ""))
+        claro = claro.sort_values("_FECHA_OPERACION_DT", ascending=False, na_position="last").copy()
+        claro["_ORDEN_VENTA_MOVIL"] = claro.groupby(["Canal", "DOCUMENTO_KEY"]).cumcount()
     else:
-        df_all = pd.DataFrame()
+        claro = pd.DataFrame(columns=[
+            "Canal", "DOCUMENTO_KEY", "_ORDEN_VENTA_MOVIL", "Archivo", "FECHA DE VENTA",
+            "_FECHA_OPERACION_DT", "_ANIO", "_MES", "Tipo Operacion", "Transaccion",
+            "Plan", "COMISION_REAL", "Estado Pago", "Columna Fecha",
+            "Columna Tipo Operacion", "Columna Documento"
+        ])
 
-    # DNI de MOVIL que no tuvieron ninguna fila en CLARO para el filtro seleccionado.
-    if claro.empty:
-        sin_claro = movil_unicos.copy()
-    else:
-        llaves_claro = claro[["Canal", "DOCUMENTO_KEY"]].drop_duplicates()
-        sin_claro = movil_unicos.merge(llaves_claro, on=["Canal", "DOCUMENTO_KEY"], how="left", indicator=True)
-        sin_claro = sin_claro[sin_claro["_merge"] == "left_only"].drop(columns=["_merge"], errors="ignore")
-
-    if not sin_claro.empty:
-        sin_claro = sin_claro.copy()
-        sin_claro["Archivo"] = "MOVIL sin cruce CLARO"
-        sin_claro["FECHA DE VENTA"] = "Sin fecha CLARO"
-        sin_claro["_FECHA_VENTA_DT"] = pd.NaT
-        sin_claro["_ANIO"] = pd.NA
-        sin_claro["_MES"] = pd.NA
-        sin_claro["Tipo Operacion"] = "SIN TRANSACCION CLARO"
-        sin_claro["Transaccion"] = "SIN TRANSACCION CLARO"
-        sin_claro["Plan"] = "Sin Plan"
-        sin_claro["COMISION_REAL"] = 0.0
-        sin_claro["COMISION"] = 0.0
-        sin_claro["Estado Pago"] = "NO PAGADA"
-        sin_claro["Columna Fecha"] = "FECHA OPERACION CLARO"
-        sin_claro["Columna Tipo Operacion"] = "TRANSACCION CLARO"
-        sin_claro["Columna Documento"] = sin_claro.get("Columna Documento Movil", "Cliente - Documento")
-        if "COLA" not in sin_claro.columns:
-            sin_claro["COLA"] = "EXTERNO"
-        extra = sin_claro[[
-            "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
-            "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
-            "ASESOR", "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
-            "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
-        ]]
-        df_all = pd.concat([df_all, extra], ignore_index=True) if not df_all.empty else extra.copy()
+    df_all = movil_unicos.merge(
+        claro,
+        on=["Canal", "DOCUMENTO_KEY", "_ORDEN_VENTA_MOVIL"],
+        how="left",
+        suffixes=("_MOVIL", "")
+    )
+    df_all["Archivo"] = df_all["Archivo"].fillna("MOVIL sin cruce CLARO")
+    df_all["FECHA DE VENTA"] = df_all["FECHA DE VENTA"].fillna(df_all["_FECHA_VENTA_MOVIL_DT"].dt.strftime("%d/%m/%Y"))
+    df_all["_ANIO"] = df_all["_ANIO"].fillna(df_all["_FECHA_VENTA_MOVIL_DT"].dt.year.astype("Int64"))
+    df_all["_MES"] = df_all["_MES"].fillna(df_all["_FECHA_VENTA_MOVIL_DT"].dt.month.astype("Int64"))
+    df_all["Tipo Operacion"] = df_all["Tipo Operacion"].fillna("SIN TRANSACCION CLARO")
+    df_all["Transaccion"] = df_all["Transaccion"].fillna("SIN TRANSACCION CLARO")
+    df_all["Plan"] = df_all["Plan"].fillna("Sin Plan")
+    df_all["COMISION_REAL"] = pd.to_numeric(df_all["COMISION_REAL"], errors="coerce").fillna(0.0)
+    df_all["COMISION"] = df_all["COMISION_REAL"]
+    df_all["Estado Pago"] = df_all["Estado Pago"].fillna("NO PAGADA")
+    df_all["Columna Fecha"] = df_all["Columna Fecha"].fillna("FECHA OPERACION CLARO")
+    df_all["Columna Tipo Operacion"] = df_all["Columna Tipo Operacion"].fillna("TRANSACCION CLARO")
+    df_all["Columna Documento"] = df_all["Columna Documento"].fillna(df_all.get("Columna Documento Movil", "Cliente - Documento"))
 
     if df_all.empty: return pd.DataFrame(columns=columnas_salida + ["Venta Valida"])
 
