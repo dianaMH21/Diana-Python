@@ -1016,6 +1016,7 @@ def _filtrar_productos_brutos_movil_general(df):
 
     excluidos = {
         "CHIP PREPAGO",
+        "PRE A PRE",
         "IFI INTERNET INALAMBRICO",
         "OLO INTERNET PORTATIL",
         "TFI",
@@ -1033,8 +1034,9 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
     2. CLARO_DC_MOVIL/CLARO_TELETALK_MOVIL define las ventas reales pagadas/no pagadas.
     3. El Tipo Operacion sale de TRANSACCION de CLARO, no de Cliente - Tipo De Operacion.
     4. Cada fila de CLARO conserva su propia COMISION TOTAL.
-    5. Ventas brutas cuenta repetidos y excluye CHIP PREPAGO, IFI Internet Inalambrico,
-       OLO Internet Portatil y TFI desde Productos - Producto Especificacion.
+    5. Ventas brutas cuenta repetidos y excluye CHIP PREPAGO, PRE A PRE,
+       IFI Internet Inalambrico, OLO Internet Portatil y TFI desde
+       Productos - Producto Especificacion.
     """
     configuracion_movil = [
         ("D&C", ["MOVIL_DC.csv"]),

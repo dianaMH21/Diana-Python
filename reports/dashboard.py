@@ -2836,6 +2836,7 @@ def render_dashboard():
 
             _PRODUCTOS_EXCLUIR_MOV = [
                 "CHIP PREPAGO",
+                "PRE A PRE",
                 "IFI INTERNET INALAMBRICO",
                 "OLO INTERNET PORTATIL",
                 "TFI",
