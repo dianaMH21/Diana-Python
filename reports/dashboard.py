@@ -50,6 +50,224 @@ def _leer_operativa_teletalk_cacheado(mtime=None):
                 continue
     return pd.DataFrame()
 
+
+def _fe_col(df, opciones):
+    if df is None or df.empty:
+        return None
+    norm = {str(c).strip().upper(): c for c in df.columns}
+    for op in opciones:
+        hit = norm.get(str(op).strip().upper())
+        if hit is not None:
+            return hit
+    for c in df.columns:
+        c_norm = str(c).strip().upper()
+        if any(str(op).strip().upper() in c_norm for op in opciones):
+            return c
+    return None
+
+
+def _fe_norm_id(value):
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    return re.sub(r"\s+", "", text)
+
+
+def _fe_norm_series(serie):
+    return serie.fillna("").map(_fe_norm_id) if serie is not None else pd.Series(dtype=str)
+
+
+def _fe_norm_text(value):
+    text = "" if pd.isna(value) else str(value).strip().upper()
+    return (text.replace("Á", "A").replace("É", "E").replace("Í", "I")
+                .replace("Ó", "O").replace("Ú", "U").replace("Ñ", "N"))
+
+
+def _fe_parse_dates(serie):
+    if serie is None:
+        return pd.Series(dtype="datetime64[ns]")
+    return pd.to_datetime(serie, errors="coerce", dayfirst=True)
+
+
+def _fe_date_out(value):
+    dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    return "" if pd.isna(dt) else dt.strftime("%d/%m/%Y")
+
+
+def _fe_month_out(value):
+    dt = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    return "" if pd.isna(dt) else f"{MESES_ES[dt.month]} {dt.year}"
+
+
+def _fe_pick_first_nonempty(serie):
+    vals = serie.fillna("").astype(str).str.strip()
+    vals = vals[vals != ""]
+    return vals.iloc[0] if not vals.empty else ""
+
+
+def _fe_cargar_claro(archivos, producto):
+    frames = []
+    for canal, archivo in archivos:
+        df = cargar_csv(archivo)
+        if df.empty:
+            continue
+        df = df.copy()
+        col_dni = _fe_col(df, ["NRO DOCUMENTO", "DNI CLIENTE", "DNI RUC", "RUC"])
+        col_sec = _fe_col(df, ["SEC"])
+        col_sot = _fe_col(df, ["SOT"])
+        col_fecha = _fe_col(df, ["FECHA INSTALACION", "FECHA INSTALACIÓN", "FECHA OPERACION", "FECHA CARGA"])
+        out = pd.DataFrame(index=df.index)
+        out["CANAL"] = canal
+        out["PRODUCTO"] = producto
+        out["DNI CLIENTE"] = _fe_norm_series(df[col_dni]) if col_dni else ""
+        out["SEC CLARO"] = _fe_norm_series(df[col_sec]) if col_sec else ""
+        out["SOT CLARO"] = _fe_norm_series(df[col_sot]) if col_sot else ""
+        out["_FECHA_CLARO_DT"] = _fe_parse_dates(df[col_fecha]) if col_fecha else pd.NaT
+        out["FECHA DE INSTALACION CLARO"] = out["_FECHA_CLARO_DT"].map(_fe_date_out)
+        frames.append(out)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _fe_agrupar_unico(df, key):
+    if df.empty or key not in df.columns:
+        return df
+    tmp = df.copy()
+    tmp = tmp[tmp[key].fillna("").astype(str).str.strip() != ""]
+    if tmp.empty:
+        return tmp
+    fecha_cols = [c for c in tmp.columns if str(c).startswith("_FECHA")]
+    if fecha_cols:
+        tmp = tmp.sort_values(fecha_cols, ascending=[False] * len(fecha_cols), na_position="last")
+    return tmp.drop_duplicates(subset=[key], keep="first").reset_index(drop=True)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def construir_fe_erratas(mtime_dvz=None, mtime_claro=None):
+    df_dvz = _leer_dvz_crudo()
+    if df_dvz.empty:
+        return pd.DataFrame()
+
+    col_tipo = _fe_col(df_dvz, ["Tipo Producto"])
+    col_clip = _fe_col(df_dvz, ["Datos Adicionales - Clip", "Datos adicionales - Clip"])
+    col_dni = _fe_col(df_dvz, ["Cliente - Documento", "Documento"])
+    col_sec = _fe_col(df_dvz, ["Datos Adicionales - Sec", "Datos adicionales - Sec", "SEC"])
+    col_sot = _fe_col(df_dvz, ["Back Office - Sot", "Back Office - SOT", "SOT"])
+    col_fecha = _fe_col(df_dvz, ["Back Office - Fecha Instalacion", "Back Office - Fecha Instalación", "FECHA INSTALACION"])
+
+    base = df_dvz.copy()
+    base["_TIPO_NORM"] = base[col_tipo].map(_fe_norm_text) if col_tipo else ""
+    base["_CANAL_NORM"] = base[col_clip].map(_fe_norm_text) if col_clip else ""
+    base["CANAL"] = "OTROS"
+    base.loc[base["_CANAL_NORM"].str.contains("D&C|DC|DYC", regex=True, na=False), "CANAL"] = "D&C"
+    base.loc[base["_CANAL_NORM"].str.contains("TELETALK", regex=False, na=False), "CANAL"] = "Teletalk"
+
+    dvz = pd.DataFrame(index=base.index)
+    dvz["CANAL"] = base["CANAL"]
+    dvz["PRODUCTO"] = base["_TIPO_NORM"].where(base["_TIPO_NORM"].isin(["FIJA", "MOVIL"]), base["_TIPO_NORM"])
+    dvz["DNI CLIENTE"] = _fe_norm_series(base[col_dni]) if col_dni else ""
+    dvz["SEC DVLZ"] = _fe_norm_series(base[col_sec]) if col_sec else ""
+    dvz["SOT DVLZ"] = _fe_norm_series(base[col_sot]) if col_sot else ""
+    dvz["_FECHA_DVLZ_DT"] = _fe_parse_dates(base[col_fecha]) if col_fecha else pd.NaT
+    dvz["FECHA DE INSTALACION DVLZ"] = dvz["_FECHA_DVLZ_DT"].map(_fe_date_out)
+
+    claro_fija = _fe_cargar_claro(
+        [("D&C", "CLARO_DC_FIJA.csv"), ("Teletalk", "CLARO_TELETALK_FIJA.csv")],
+        "FIJA",
+    )
+    claro_movil = _fe_cargar_claro(
+        [("D&C", "CLARO_DC_MOVIL.csv"), ("Teletalk", "CLARO_TELETALK_MOVIL.csv")],
+        "MOVIL",
+    )
+
+    dvz_fija = dvz[dvz["PRODUCTO"].eq("FIJA")].copy()
+    dvz_movil = dvz[dvz["PRODUCTO"].eq("MOVIL")].copy()
+
+    claro_fija = _fe_agrupar_unico(claro_fija[claro_fija["SOT CLARO"] != ""].copy(), "SOT CLARO")
+    claro_movil = _fe_agrupar_unico(claro_movil[claro_movil["DNI CLIENTE"] != ""].copy(), "DNI CLIENTE")
+
+    dvz_fija_con_sot = _fe_agrupar_unico(dvz_fija[dvz_fija["SOT DVLZ"] != ""].copy(), "SOT DVLZ")
+    fija = dvz_fija_con_sot.merge(claro_fija, left_on="SOT DVLZ", right_on="SOT CLARO", how="outer", suffixes=("_DVLZ_SIDE", "_CLARO_SIDE"))
+
+    for col in ["CANAL", "PRODUCTO", "DNI CLIENTE"]:
+        left = f"{col}_DVLZ_SIDE"
+        right = f"{col}_CLARO_SIDE"
+        if left in fija.columns or right in fija.columns:
+            fija[col] = fija.get(left, "").fillna("").astype(str)
+            if right in fija.columns:
+                fija[col] = fija[col].where(fija[col].str.strip() != "", fija[right].fillna("").astype(str))
+
+    dvz_fija_sin_sot = dvz_fija[dvz_fija["SOT DVLZ"] == ""].copy()
+    if not dvz_fija_sin_sot.empty and not claro_fija.empty:
+        claro_por_dni = _fe_agrupar_unico(claro_fija[claro_fija["DNI CLIENTE"] != ""].copy(), "DNI CLIENTE")
+        dvz_fija_sin_sot = dvz_fija_sin_sot.merge(
+            claro_por_dni[["DNI CLIENTE", "SEC CLARO", "SOT CLARO", "_FECHA_CLARO_DT", "FECHA DE INSTALACION CLARO"]],
+            on="DNI CLIENTE",
+            how="left",
+        )
+    fija = pd.concat([fija, dvz_fija_sin_sot], ignore_index=True, sort=False)
+
+    dvz_movil = _fe_agrupar_unico(dvz_movil[dvz_movil["DNI CLIENTE"] != ""].copy(), "DNI CLIENTE")
+    movil = dvz_movil.merge(claro_movil, on="DNI CLIENTE", how="outer", suffixes=("_DVLZ_SIDE", "_CLARO_SIDE"))
+    for col in ["CANAL", "PRODUCTO"]:
+        left = f"{col}_DVLZ_SIDE"
+        right = f"{col}_CLARO_SIDE"
+        if left in movil.columns or right in movil.columns:
+            movil[col] = movil.get(left, "").fillna("").astype(str)
+            if right in movil.columns:
+                movil[col] = movil[col].where(movil[col].str.strip() != "", movil[right].fillna("").astype(str))
+    movil["SOT DVLZ"] = movil.get("SOT DVLZ", "")
+    movil["SOT CLARO"] = movil.get("SOT CLARO", "")
+
+    final = pd.concat([fija, movil], ignore_index=True, sort=False)
+    for col in [
+        "DNI CLIENTE", "PRODUCTO", "CANAL", "SEC DVLZ", "SEC CLARO", "SOT DVLZ", "SOT CLARO",
+        "FECHA DE INSTALACION DVLZ", "FECHA DE INSTALACION CLARO"
+    ]:
+        if col not in final.columns:
+            final[col] = ""
+        final[col] = final[col].fillna("").astype(str).str.strip()
+
+    final["_FECHA_DVLZ_TXT"] = final.get("_FECHA_DVLZ_DT", pd.Series(pd.NaT, index=final.index)).map(_fe_date_out)
+    final["_FECHA_CLARO_TXT"] = final.get("_FECHA_CLARO_DT", pd.Series(pd.NaT, index=final.index)).map(_fe_date_out)
+    final["FECHA DE INSTALACION DVLZ"] = final["FECHA DE INSTALACION DVLZ"].where(final["FECHA DE INSTALACION DVLZ"] != "", final["_FECHA_DVLZ_TXT"])
+    final["FECHA DE INSTALACION CLARO"] = final["FECHA DE INSTALACION CLARO"].where(final["FECHA DE INSTALACION CLARO"] != "", final["_FECHA_CLARO_TXT"])
+    final["MES"] = final.get("_FECHA_CLARO_DT", pd.Series(pd.NaT, index=final.index)).map(_fe_month_out)
+    final["MES"] = final["MES"].where(final["MES"] != "", final.get("_FECHA_DVLZ_DT", pd.Series(pd.NaT, index=final.index)).map(_fe_month_out))
+
+    def _estado_row(row):
+        motivos = []
+        prod = _fe_norm_text(row.get("PRODUCTO", ""))
+        if not row.get("DNI CLIENTE", ""):
+            motivos.append("DNI vacío")
+        if not row.get("SEC DVLZ", "") and row.get("SEC CLARO", ""):
+            motivos.append("SEC vacío en DVLZ")
+        elif row.get("SEC DVLZ", "") and row.get("SEC CLARO", "") and row.get("SEC DVLZ") != row.get("SEC CLARO"):
+            motivos.append("SEC diferente")
+        if prod == "FIJA":
+            if not row.get("SOT DVLZ", "") and row.get("SOT CLARO", ""):
+                motivos.append("SOT vacío en DVLZ")
+            elif row.get("SOT DVLZ", "") and not row.get("SOT CLARO", ""):
+                motivos.append("SOT no encontrada en CLARO")
+            elif row.get("SOT DVLZ", "") and row.get("SOT CLARO", "") and row.get("SOT DVLZ") != row.get("SOT CLARO"):
+                motivos.append("SOT diferente")
+        if not row.get("FECHA DE INSTALACION DVLZ", "") and row.get("FECHA DE INSTALACION CLARO", ""):
+            motivos.append("Fecha vacía en DVLZ")
+        elif row.get("FECHA DE INSTALACION DVLZ", "") and row.get("FECHA DE INSTALACION CLARO", "") and row.get("FECHA DE INSTALACION DVLZ") != row.get("FECHA DE INSTALACION CLARO"):
+            motivos.append("Fecha diferente")
+        if not row.get("SEC CLARO", "") and not row.get("SOT CLARO", ""):
+            motivos.append("No cruza con CLARO")
+        return pd.Series(["INCORRECTO" if motivos else "CORRECTO", " | ".join(motivos)])
+
+    final[["VALIDACION", "MOTIVO"]] = final.apply(_estado_row, axis=1)
+    cols = [
+        "DNI CLIENTE", "PRODUCTO", "CANAL", "SEC DVLZ", "SEC CLARO", "SOT DVLZ", "SOT CLARO",
+        "FECHA DE INSTALACION DVLZ", "FECHA DE INSTALACION CLARO", "MES", "VALIDACION", "MOTIVO"
+    ]
+    return final[cols].drop_duplicates().reset_index(drop=True)
+
+
 def render_dashboard():
     _inject_tabs_card_style()
     OPCIONES_FIJA = [
@@ -65,6 +283,7 @@ def render_dashboard():
     OPCIONES_FACTOR = [
         "📊 Resumen NPN",
         "💼 Comisión Operativa",
+        "🧾 FE DE ERRATAS",
     ]
 
     SEP_FIJA   = "📡 FIJA"
@@ -100,6 +319,7 @@ def render_dashboard():
         ("📋", "Detalle Móvil", "Detalle Móvil General"),
         ("📊", "NPN", "📊 Resumen NPN"),
         ("💼", "Comisión Operativa", "💼 Comisión Operativa"),
+        ("🧾", "Fe de Erratas", "🧾 FE DE ERRATAS"),
     ]
     _mini_nav_html = "".join(
         f'<a class="dash-mini-item" title="{_html.escape(title)}" href="?nav={quote(option)}">'
@@ -2577,6 +2797,102 @@ def render_dashboard():
                     if not _tabla_op.empty:
                         _tabla_op["Total pagado"] = _tabla_op["Total pagado"].map(lambda x: f"S/ {float(x):,.2f}")
                     java_table(_tabla_op, height=430, title="Comisión Operativa", subtitle="Resumen por mes, canal y servicio desde OPERATIVA_TELETALK", accent="#0f4287", max_rows=500)
+
+        elif opcion_factor == "🧾 FE DE ERRATAS":
+            set_bg(img_caratula)
+            st.markdown("""
+            <style>
+            .fe-header-wrap {display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,rgba(15,66,135,.92),rgba(220,38,38,.78));border-radius:14px;padding:20px 28px;margin-bottom:18px;box-shadow:0 4px 20px rgba(15,66,135,.20);border:1px solid rgba(255,255,255,.12);}
+            .fe-kicker {font-size:10px;font-weight:900;color:rgba(255,255,255,.70);letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px;}
+            .fe-title {font-size:26px;font-weight:950;color:#fff;letter-spacing:.06em;line-height:1.1;}
+            .fe-sub {font-size:11px;color:rgba(255,255,255,.72);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
+            .fe-badge {display:inline-block;color:#fff;font-weight:900;font-size:11px;border-radius:999px;padding:5px 13px;margin:3px;border:1.5px solid rgba(255,255,255,.34);background:rgba(255,255,255,.13);}
+            div[data-testid="stVerticalBlock"]:has(div.fe-filter-anchor) {background:rgba(255,255,255,.80);border:1px solid rgba(15,66,135,.12);border-radius:14px;padding:16px 18px 12px 18px;margin:4px 0 14px 0;box-shadow:0 14px 34px rgba(15,23,42,.08);backdrop-filter:blur(8px);}
+            .fe-kpi-row {display:flex;gap:12px;margin:14px 0 16px 0;flex-wrap:wrap;}
+            .fe-kpi-card {flex:1;min-width:160px;background:rgba(255,255,255,.96);border-radius:12px;padding:16px 18px;text-align:left;box-shadow:0 3px 14px rgba(0,0,0,.08);border-top:4px solid #0f4287;}
+            .fe-kpi-label {font-size:9px;font-weight:900;color:#64748b;letter-spacing:.12em;text-transform:uppercase;margin-bottom:7px;}
+            .fe-kpi-val {font-size:27px;font-weight:950;color:#0f4287;line-height:1.05;}
+            .fe-kpi-sub {font-size:10px;color:#64748b;margin-top:6px;font-weight:800;}
+            </style>
+            <div class="fe-header-wrap">
+                <div><div class="fe-kicker">Auditoría Comercial</div><div class="fe-title">FE DE ERRATAS</div><div class="fe-sub">Cruce de campos críticos entre DVLZ y CLARO</div></div>
+                <div style="text-align:right;"><span class="fe-badge">FIJA: SOT única</span><br><span class="fe-badge">MÓVIL: DNI único</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            _rutas_fe = [
+                os.path.join(DATA_DIR, n)
+                for n in ["DVZ.csv", "CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv", "CLARO_DC_MOVIL.csv", "CLARO_TELETALK_MOVIL.csv"]
+                if os.path.exists(os.path.join(DATA_DIR, n))
+            ]
+            _mtime_dvz = os.path.getmtime(os.path.join(DATA_DIR, "DVZ.csv")) if os.path.exists(os.path.join(DATA_DIR, "DVZ.csv")) else None
+            _mtime_claro = max([os.path.getmtime(p) for p in _rutas_fe], default=None)
+
+            if st.button("Refrescar cruce", key="fe_refresh", help="Limpia caché y reconstruye la fe de erratas"):
+                st.cache_data.clear()
+                st.rerun()
+
+            _df_fe = construir_fe_erratas(_mtime_dvz, _mtime_claro)
+            if _df_fe.empty:
+                st.warning("No se pudo construir FE DE ERRATAS. Verifica que existan DVZ.csv y los archivos CLARO en la carpeta de datos.")
+            else:
+                st.markdown('<div class="fe-filter-anchor"></div>', unsafe_allow_html=True)
+                _f1, _f2, _f3, _f4 = st.columns(4)
+                with _f1:
+                    _fe_producto = st.selectbox("Producto", ["Todos", "FIJA", "MOVIL"], key="fe_producto")
+                with _f2:
+                    _fe_estado = st.selectbox("Validación", ["Todos", "INCORRECTO", "CORRECTO"], key="fe_estado")
+                with _f3:
+                    _fe_canal_opts = sorted([x for x in _df_fe["CANAL"].dropna().astype(str).unique().tolist() if x])
+                    _fe_canal = st.multiselect("Canal", _fe_canal_opts, default=[], placeholder="Todos los canales", key="fe_canal")
+                with _f4:
+                    _fe_mes_opts = sorted(
+                        [x for x in _df_fe["MES"].dropna().astype(str).unique().tolist() if x],
+                        key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)) if len(s.split()) == 2 and s.split()[1].isdigit() else (0, 0),
+                    )
+                    _fe_mes = st.multiselect("Mes", _fe_mes_opts, default=[], placeholder="Todos los meses", key="fe_mes")
+
+                _df_fe_fil = _df_fe.copy()
+                if _fe_producto != "Todos":
+                    _df_fe_fil = _df_fe_fil[_df_fe_fil["PRODUCTO"].eq(_fe_producto)]
+                if _fe_estado != "Todos":
+                    _df_fe_fil = _df_fe_fil[_df_fe_fil["VALIDACION"].eq(_fe_estado)]
+                if _fe_canal:
+                    _df_fe_fil = _df_fe_fil[_df_fe_fil["CANAL"].isin(_fe_canal)]
+                if _fe_mes:
+                    _df_fe_fil = _df_fe_fil[_df_fe_fil["MES"].isin(_fe_mes)]
+
+                _total_fe = int(len(_df_fe_fil))
+                _incorrectos_fe = int((_df_fe_fil["VALIDACION"] == "INCORRECTO").sum()) if _total_fe else 0
+                _correctos_fe = int((_df_fe_fil["VALIDACION"] == "CORRECTO").sum()) if _total_fe else 0
+                _sot_vacio_fe = int((_df_fe_fil["SOT DVLZ"].eq("") & _df_fe_fil["SOT CLARO"].ne("") & _df_fe_fil["PRODUCTO"].eq("FIJA")).sum()) if _total_fe else 0
+                _sec_vacio_fe = int((_df_fe_fil["SEC DVLZ"].eq("") & _df_fe_fil["SEC CLARO"].ne("")).sum()) if _total_fe else 0
+                _pct_fe = (_incorrectos_fe / _total_fe * 100) if _total_fe else 0.0
+                st.markdown(f"""
+                <div class="fe-kpi-row">
+                    <div class="fe-kpi-card" style="border-top-color:#0f4287;"><div class="fe-kpi-label">Registros</div><div class="fe-kpi-val">{_total_fe:,}</div><div class="fe-kpi-sub">Cruce filtrado</div></div>
+                    <div class="fe-kpi-card" style="border-top-color:#dc2626;"><div class="fe-kpi-label">Incorrectos</div><div class="fe-kpi-val" style="color:#dc2626;">{_incorrectos_fe:,}</div><div class="fe-kpi-sub">{_pct_fe:.2f}% observado</div></div>
+                    <div class="fe-kpi-card" style="border-top-color:#84cc16;"><div class="fe-kpi-label">Correctos</div><div class="fe-kpi-val" style="color:#65a30d;">{_correctos_fe:,}</div><div class="fe-kpi-sub">Sin diferencias críticas</div></div>
+                    <div class="fe-kpi-card" style="border-top-color:#ea580c;"><div class="fe-kpi-label">SOT vacío DVLZ</div><div class="fe-kpi-val" style="color:#ea580c;">{_sot_vacio_fe:,}</div><div class="fe-kpi-sub">FIJA con SOT en CLARO</div></div>
+                    <div class="fe-kpi-card" style="border-top-color:#7c3aed;"><div class="fe-kpi-label">SEC vacío DVLZ</div><div class="fe-kpi-val" style="color:#7c3aed;">{_sec_vacio_fe:,}</div><div class="fe-kpi-sub">SEC existe en CLARO</div></div>
+                </div>""", unsafe_allow_html=True)
+
+                _tabla_fe = _df_fe_fil.copy()
+                java_table(
+                    _tabla_fe,
+                    height=540,
+                    title="FE DE ERRATAS",
+                    subtitle="FIJA cruza por SOT única; MÓVIL cruza por DNI único. Los vacíos de DVLZ se mantienen para auditoría.",
+                    accent="#dc2626",
+                    max_rows=1200,
+                )
+                st.download_button(
+                    "Descargar FE DE ERRATAS",
+                    data=_tabla_fe.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="fe_de_erratas_dvlz_claro.csv",
+                    mime="text/csv",
+                    key="dl_fe_erratas",
+                )
 
     elif seccion == "fija":
 
