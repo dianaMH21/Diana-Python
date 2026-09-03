@@ -2438,11 +2438,12 @@ def mostrar_detalle_movil_general():
         st.markdown("#### 📅 Semana de Pago Teletalk")
         st.caption("Semana tomada de la columna SEMANA de CLARO_TELETALK_MOVIL.csv")
 
-        df_sem = df_filtrado.copy()
-        if "Canal" in df_sem.columns:
-            df_sem = df_sem[df_sem["Canal"] == "Teletalk"].copy()
-        if "Venta Valida" in df_sem.columns:
-            df_sem = df_sem[df_sem["Venta Valida"]].copy()
+        dfs_semana_claro = []
+        for mes_semana in filtro_mes:
+            dfs_semana_claro.append(construir_pagos_claro_movil_por_dni_mes(mes_semana, "Teletalk"))
+        df_sem = pd.concat(dfs_semana_claro, ignore_index=True) if dfs_semana_claro else pd.DataFrame()
+        if sel_pago and "Estado Pago" in df_sem.columns:
+            df_sem = df_sem[df_sem["Estado Pago"].isin(sel_pago)].copy()
         if "SEMANA_LABEL" not in df_sem.columns:
             df_sem["SEMANA_LABEL"] = ""
         if "SEMANA_SORT_KEY" not in df_sem.columns:
@@ -2524,7 +2525,7 @@ def mostrar_detalle_movil_general():
                 with st.expander(titulo_semana, expanded=False):
                     columnas_semana = [
                         "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion", "Plan",
-                        "Estado Pago", "COMISION_REAL", "SUPERVISOR", "TIPIS", "ASESOR", "COLA",
+                        "Estado Pago", "COMISION_REAL", "SEMANA_PAGO_RAW",
                     ]
                     columnas_semana = [c for c in columnas_semana if c in detalle_sem.columns]
                     detalle_show = detalle_sem[columnas_semana].copy()
@@ -2535,7 +2536,6 @@ def mostrar_detalle_movil_general():
                     columnas_desc_sem = [
                         "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion",
                         "Plan", "Estado Pago", "COMISION_REAL", "SEMANA_LABEL", "SEMANA_PAGO_RAW",
-                        "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
                     ]
                     columnas_desc_sem = [c for c in columnas_desc_sem if c in detalle_sem.columns]
                     nombre_semana = re.sub(r"[^A-Za-z0-9]+", "_", semana_label).strip("_").lower()
@@ -2587,7 +2587,6 @@ def mostrar_detalle_movil_general():
             columnas_desc = [
                 "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion",
                 "Plan", "Estado Pago", "COMISION_REAL", "SEMANA_LABEL", "SEMANA_PAGO_RAW",
-                "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
             ]
             columnas_desc = [c for c in columnas_desc if c in df_sem_limpio.columns]
             st.download_button(
