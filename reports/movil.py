@@ -786,6 +786,61 @@ def _parse_fecha_movil_robusta(serie):
     fechas = fechas_iso.fillna(fechas_txt).fillna(fechas_num)
     return fechas
 
+def _parsear_semana_pago_movil_teletalk(serie):
+    """
+    Recibe valores de SEMANA de CLARO_TELETALK_MOVIL como:
+    S1 NOVIEMBRE 2025, S03.202511 o Semana 3 Noviembre 2025.
+    Devuelve SEMANA_PAGO_RAW, SEMANA_NUM, ANIO_MES, SORT_KEY y SEMANA_LABEL.
+    """
+    s = serie.fillna("").astype(str).str.strip()
+    normal = s.str.upper()
+    for a, b in [("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"), ("Ü", "U")]:
+        normal = normal.str.replace(a, b, regex=False)
+
+    num = normal.str.extract(r"\bS(?:EMANA)?\s*0*(\d+)", expand=False).fillna("")
+    fecha_compacta = normal.str.extract(r"\.(\d{6})", expand=False).fillna("")
+    anio = fecha_compacta.str[:4]
+    mes_n = fecha_compacta.str[4:6]
+
+    meses_norm = {str(v).upper(): k for k, v in MESES_ES.items()}
+    meses_norm.update({
+        "ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,
+        "JULIO": 7, "AGOSTO": 8, "SETIEMBRE": 9, "SEPTIEMBRE": 9, "OCTUBRE": 10,
+        "NOVIEMBRE": 11, "DICIEMBRE": 12,
+    })
+    mes_palabra = normal.str.extract(
+        r"\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\b",
+        expand=False
+    ).fillna("")
+    anio_palabra = normal.str.extract(r"\b(20\d{2})\b", expand=False).fillna("")
+
+    mes_desde_palabra = mes_palabra.map(meses_norm).fillna(0).astype(int)
+    mes_int = pd.to_numeric(mes_n, errors="coerce").fillna(0).astype(int)
+    mes_int = mes_int.where(mes_int > 0, mes_desde_palabra)
+    anio_int = pd.to_numeric(anio, errors="coerce").fillna(0).astype(int)
+    anio_palabra_int = pd.to_numeric(anio_palabra, errors="coerce").fillna(0).astype(int)
+    anio_int = anio_int.where(anio_int > 0, anio_palabra_int)
+    num_int = pd.to_numeric(num, errors="coerce").fillna(0).astype(int)
+
+    def _label(i):
+        raw = s.iloc[i]
+        n = int(num_int.iloc[i])
+        a = int(anio_int.iloc[i])
+        m = int(mes_int.iloc[i])
+        if n and a and m:
+            return f"Semana {n} · {MESES_ES.get(m, str(m))} {a}"
+        return raw if raw else "Sin Semana"
+
+    labels = pd.Series([_label(i) for i in range(len(s))], index=s.index)
+    sort_key = anio_int * 10000 + mes_int * 100 + num_int
+    return pd.DataFrame({
+        "SEMANA_PAGO_RAW": s,
+        "SEMANA_NUM": num_int,
+        "ANIO_MES": anio_int * 100 + mes_int,
+        "SORT_KEY": sort_key,
+        "SEMANA_LABEL": labels,
+    }, index=s.index)
+
 def _obtener_fecha_venta_movil_general(df):
     col = encontrar_columna_flexible(df, [
         "FECHA DE VENTA", "Fecha de Venta", "FECHA VENTA", "Fecha Venta",
@@ -926,6 +981,9 @@ def construir_pagos_claro_movil_por_dni_mes(filtro_mes="Todos los meses", filtro
         col_plan = encontrar_columna_flexible(df, [
             "PLAN", "Plan", "PRODUCTO", "Producto", "SERVICIO", "Servicio"
         ])
+        col_semana = encontrar_columna_flexible(df, [
+            "SEMANA", "Semana", "SEMANA PAGO", "SEMANA_PAGO", "SEMANA DE PAGO"
+        ])
 
         if not col_dni or not col_fecha or not col_comision: continue
 
@@ -938,6 +996,17 @@ def construir_pagos_claro_movil_por_dni_mes(filtro_mes="Todos los meses", filtro
         df["_MES"] = df["_FECHA_OPERACION_DT"].dt.month.astype("Int64")
         df["FECHA DE VENTA"] = df["_FECHA_OPERACION_DT"].dt.strftime("%d/%m/%Y").fillna("Sin fecha")
         df["COMISION_REAL"] = pd.to_numeric(df[col_comision], errors="coerce").fillna(0)
+        if canal == "Teletalk" and col_semana:
+            sem_df = _parsear_semana_pago_movil_teletalk(df[col_semana])
+            df["SEMANA_PAGO_RAW"] = sem_df["SEMANA_PAGO_RAW"].values
+            df["SEMANA_NUM"] = sem_df["SEMANA_NUM"].values
+            df["SEMANA_LABEL"] = sem_df["SEMANA_LABEL"].values
+            df["SEMANA_SORT_KEY"] = sem_df["SORT_KEY"].values
+        else:
+            df["SEMANA_PAGO_RAW"] = ""
+            df["SEMANA_NUM"] = 0
+            df["SEMANA_LABEL"] = ""
+            df["SEMANA_SORT_KEY"] = 0
 
         if col_transaccion:
             df["Tipo Operacion"] = (
@@ -978,13 +1047,15 @@ def construir_pagos_claro_movil_por_dni_mes(filtro_mes="Todos los meses", filtro
         bases.append(df[[
             "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_OPERACION_DT", "_ANIO", "_MES",
             "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Transaccion", "Cliente", "Plan",
-            "COMISION_REAL", "Estado Pago", "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
+            "COMISION_REAL", "Estado Pago", "SEMANA_PAGO_RAW", "SEMANA_NUM", "SEMANA_LABEL", "SEMANA_SORT_KEY",
+            "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
         ]])
 
     cols = [
         "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_OPERACION_DT", "_ANIO", "_MES",
         "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Transaccion", "Cliente", "Plan",
-        "COMISION_REAL", "Estado Pago", "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
+        "COMISION_REAL", "Estado Pago", "SEMANA_PAGO_RAW", "SEMANA_NUM", "SEMANA_LABEL", "SEMANA_SORT_KEY",
+        "Columna Fecha", "Columna Tipo Operacion", "Columna Documento"
     ]
     if not bases: return pd.DataFrame(columns=cols)
     return pd.concat(bases, ignore_index=True).reset_index(drop=True)
@@ -1115,6 +1186,7 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
         "Canal", "Archivo", "FECHA DE VENTA", "_FECHA_VENTA_DT", "_ANIO", "_MES",
         "DOCUMENTO_KEY", "Documento", "Tipo Operacion", "Cliente", "SUPERVISOR", "TIPIS",
         "ASESOR", "Departamento", "COLA", "_FECHA_INSTALACION_DT", "Transaccion", "Plan", "COMISION_REAL", "COMISION", "Estado Pago",
+        "SEMANA_PAGO_RAW", "SEMANA_NUM", "SEMANA_LABEL", "SEMANA_SORT_KEY",
         "Columna Fecha", "Columna Tipo Operacion", "Columna Documento", "Columna Supervisor", "Columna Tipificación"
     ]
 
@@ -1130,7 +1202,7 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
         claro = pd.DataFrame(columns=[
             "Canal", "DOCUMENTO_KEY", "_ORDEN_VENTA_MOVIL", "Archivo", "FECHA DE VENTA",
             "_FECHA_OPERACION_DT", "_ANIO", "_MES", "Tipo Operacion", "Transaccion",
-            "Plan", "COMISION_REAL", "Estado Pago", "Columna Fecha",
+            "Plan", "COMISION_REAL", "Estado Pago", "SEMANA_PAGO_RAW", "SEMANA_NUM", "SEMANA_LABEL", "SEMANA_SORT_KEY", "Columna Fecha",
             "Columna Tipo Operacion", "Columna Documento"
         ])
 
@@ -1150,6 +1222,10 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
     df_all["COMISION_REAL"] = pd.to_numeric(df_all["COMISION_REAL"], errors="coerce").fillna(0.0)
     df_all["COMISION"] = df_all["COMISION_REAL"]
     df_all["Estado Pago"] = df_all["Estado Pago"].fillna("NO PAGADA")
+    df_all["SEMANA_PAGO_RAW"] = df_all["SEMANA_PAGO_RAW"].fillna("")
+    df_all["SEMANA_LABEL"] = df_all["SEMANA_LABEL"].fillna("")
+    df_all["SEMANA_NUM"] = pd.to_numeric(df_all["SEMANA_NUM"], errors="coerce").fillna(0).astype(int)
+    df_all["SEMANA_SORT_KEY"] = pd.to_numeric(df_all["SEMANA_SORT_KEY"], errors="coerce").fillna(0).astype(int)
     df_all["Columna Fecha"] = df_all["Columna Fecha"].fillna("FECHA OPERACION CLARO")
     df_all["Columna Tipo Operacion"] = df_all["Columna Tipo Operacion"].fillna("TRANSACCION CLARO")
     df_all["Columna Documento"] = df_all["Columna Documento"].fillna(df_all.get("Columna Documento Movil", "Cliente - Documento"))
@@ -2196,6 +2272,7 @@ def mostrar_detalle_movil_general():
         "👥 Ranking Asesores",
         "📍 Ranking Departamentos",
         "📊 Caídas Teletalk",
+        "📅 Semana de Pago Teletalk",
         "📦 Planes por Precio Oferta"
     ]
     _vista_movil = st.radio(
@@ -2356,6 +2433,172 @@ def mostrar_detalle_movil_general():
             except Exception:
                 pass
             mostrar_resumen_etapas_expandible_teletalk(df_caidas_tt, resumen_tt, ", ".join(filtro_mes) if len(filtro_mes) > 1 else filtro_mes[0])
+
+    elif _vista_movil == "📅 Semana de Pago Teletalk":
+        st.markdown("#### 📅 Semana de Pago Teletalk")
+        st.caption("Semana tomada de la columna SEMANA de CLARO_TELETALK_MOVIL.csv")
+
+        df_sem = df_filtrado.copy()
+        if "Canal" in df_sem.columns:
+            df_sem = df_sem[df_sem["Canal"] == "Teletalk"].copy()
+        if "Venta Valida" in df_sem.columns:
+            df_sem = df_sem[df_sem["Venta Valida"]].copy()
+        if "SEMANA_LABEL" not in df_sem.columns:
+            df_sem["SEMANA_LABEL"] = ""
+        if "SEMANA_SORT_KEY" not in df_sem.columns:
+            df_sem["SEMANA_SORT_KEY"] = 0
+
+        df_sem["SEMANA_LABEL"] = df_sem["SEMANA_LABEL"].fillna("").astype(str).str.strip()
+        df_sem.loc[df_sem["SEMANA_LABEL"].eq(""), "SEMANA_LABEL"] = "Sin Semana Asignada"
+        df_sem["SEMANA_SORT_KEY"] = pd.to_numeric(df_sem["SEMANA_SORT_KEY"], errors="coerce").fillna(99999999).astype(int)
+
+        semanas_disp = (
+            df_sem[df_sem["SEMANA_LABEL"] != "Sin Semana Asignada"]
+            [["SEMANA_LABEL", "SEMANA_SORT_KEY"]]
+            .drop_duplicates()
+            .sort_values("SEMANA_SORT_KEY")["SEMANA_LABEL"]
+            .tolist()
+        )
+        filtro_semana_movil = st.multiselect(
+            "Filtrar por Semana de Pago",
+            semanas_disp,
+            default=[],
+            key="det_movil_semana_pago_teletalk",
+            placeholder="Todas las semanas",
+        )
+        if filtro_semana_movil:
+            df_sem = df_sem[df_sem["SEMANA_LABEL"].isin(filtro_semana_movil)].copy()
+
+        df_sem_limpio = df_sem[df_sem["SEMANA_LABEL"] != "Sin Semana Asignada"].copy()
+        if df_sem_limpio.empty:
+            st.info("No hay ventas Teletalk con semana asignada para los filtros seleccionados.")
+        else:
+            grp_sem = (
+                df_sem_limpio
+                .groupby(["SEMANA_LABEL", "SEMANA_PAGO_RAW", "SEMANA_SORT_KEY"], dropna=False)
+                .agg(
+                    Total_Ventas=("Estado Pago", "count"),
+                    Pagadas=("Estado Pago", lambda x: (x == "PAGADA").sum()),
+                    No_Pagadas=("Estado Pago", lambda x: (x != "PAGADA").sum()),
+                    Comision=("COMISION_REAL", lambda x: pd.to_numeric(x, errors="coerce").fillna(0).sum()),
+                )
+                .reset_index()
+                .sort_values("SEMANA_SORT_KEY")
+            )
+            grp_sem["% Efectividad"] = (grp_sem["Pagadas"] / grp_sem["Total_Ventas"] * 100).round(2).fillna(0).astype(str) + "%"
+
+            tot_ventas = int(grp_sem["Total_Ventas"].sum())
+            tot_pagadas = int(grp_sem["Pagadas"].sum())
+            tot_no_pagadas = int(grp_sem["No_Pagadas"].sum())
+            tot_comision = float(grp_sem["Comision"].sum())
+            tot_pct = (tot_pagadas / tot_ventas * 100) if tot_ventas else 0
+
+            s1, s2, s3, s4, s5 = st.columns(5)
+            _kpi_movil_teletalk_card(s1, "Total Ventas", f"{tot_ventas:,}", "Teletalk con semana", "#111827")
+            _kpi_movil_teletalk_card(s2, "Pagadas", f"{tot_pagadas:,}", "Comisión > 0", "#059669")
+            _kpi_movil_teletalk_card(s3, "No Pagadas", f"{tot_no_pagadas:,}", "Sin comisión", "#dc2626")
+            _kpi_movil_teletalk_card(s4, "% Efectividad", f"{tot_pct:.2f}%", "Pagadas / total", "#70008f")
+            _kpi_movil_teletalk_card(s5, "Comisión", formatear_moneda(tot_comision), "Total pagado", "#0891b2")
+
+            st.write("")
+            for _, semana_row in grp_sem.iterrows():
+                semana_label = str(semana_row["SEMANA_LABEL"])
+                ventas_sem = int(semana_row["Total_Ventas"])
+                pagadas_sem = int(semana_row["Pagadas"])
+                no_pagadas_sem = int(semana_row["No_Pagadas"])
+                comision_sem = float(semana_row["Comision"])
+                pct_sem = (pagadas_sem / ventas_sem * 100) if ventas_sem else 0
+
+                detalle_sem = df_sem_limpio[df_sem_limpio["SEMANA_LABEL"] == semana_label].copy()
+                fechas_sem = pd.to_datetime(detalle_sem.get("_FECHA_VENTA_DT", pd.Series(dtype="datetime64[ns]")), errors="coerce").dropna()
+                if fechas_sem.empty:
+                    fecha_rango = "Fechas no disponibles"
+                else:
+                    fecha_rango = f"{fechas_sem.min().strftime('%d/%m/%Y')} → {fechas_sem.max().strftime('%d/%m/%Y')}"
+
+                titulo_semana = (
+                    f"➕  {semana_label}  🗓️  {fecha_rango} | "
+                    f"Ventas: {ventas_sem} Pagadas: {pagadas_sem} Caídas: {no_pagadas_sem} "
+                    f"{formatear_moneda(comision_sem)} {pct_sem:.1f}%"
+                )
+                with st.expander(titulo_semana, expanded=False):
+                    columnas_semana = [
+                        "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion", "Plan",
+                        "Estado Pago", "COMISION_REAL", "SUPERVISOR", "TIPIS", "ASESOR", "COLA",
+                    ]
+                    columnas_semana = [c for c in columnas_semana if c in detalle_sem.columns]
+                    detalle_show = detalle_sem[columnas_semana].copy()
+                    if "COMISION_REAL" in detalle_show.columns:
+                        detalle_show["COMISION_REAL"] = pd.to_numeric(detalle_show["COMISION_REAL"], errors="coerce").fillna(0).map(formatear_moneda)
+                    st.dataframe(detalle_show, use_container_width=True, height=min(420, 90 + 36 * len(detalle_show)))
+
+                    columnas_desc_sem = [
+                        "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion",
+                        "Plan", "Estado Pago", "COMISION_REAL", "SEMANA_LABEL", "SEMANA_PAGO_RAW",
+                        "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
+                    ]
+                    columnas_desc_sem = [c for c in columnas_desc_sem if c in detalle_sem.columns]
+                    nombre_semana = re.sub(r"[^A-Za-z0-9]+", "_", semana_label).strip("_").lower()
+                    st.download_button(
+                        f"⬇️ Descargar {semana_label}",
+                        data=detalle_sem[columnas_desc_sem].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                        file_name=f"semana_pago_teletalk_movil_{nombre_semana}.csv",
+                        mime="text/csv",
+                        key=f"dl_semana_pago_teletalk_movil_{nombre_semana}",
+                        use_container_width=True,
+                    )
+
+            try:
+                import altair as alt
+                chart_base = grp_sem.rename(columns={
+                    "SEMANA_LABEL": "Semana",
+                    "Total_Ventas": "Total Ventas",
+                    "No_Pagadas": "No Pagadas",
+                }).copy()
+                orden_sem = chart_base.sort_values("SEMANA_SORT_KEY")["Semana"].tolist()
+                chart_data = chart_base.melt(
+                    id_vars=["Semana", "SEMANA_SORT_KEY"],
+                    value_vars=["Total Ventas", "Pagadas", "No Pagadas"],
+                    var_name="Indicador",
+                    value_name="Cantidad",
+                )
+                chart = (
+                    alt.Chart(chart_data)
+                    .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5, opacity=0.9)
+                    .encode(
+                        x=alt.X("Semana:N", sort=orden_sem, title="Semana de Pago", axis=alt.Axis(labelAngle=0)),
+                        xOffset="Indicador:N",
+                        y=alt.Y("Cantidad:Q", title="Ventas"),
+                        color=alt.Color(
+                            "Indicador:N",
+                            scale=alt.Scale(domain=["Total Ventas", "Pagadas", "No Pagadas"], range=["#70008f", "#059669", "#dc2626"]),
+                            legend=alt.Legend(title="Indicador"),
+                        ),
+                        tooltip=["Semana", "Indicador", alt.Tooltip("Cantidad:Q", format=",.0f")],
+                    )
+                    .properties(height=380, title="Ventas por Semana de Pago Teletalk")
+                    .configure_title(fontSize=15, fontWeight="bold", color="#70008f")
+                    .configure_view(strokeWidth=0)
+                )
+                st.altair_chart(chart, use_container_width=True)
+            except Exception:
+                pass
+
+            columnas_desc = [
+                "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Cliente", "Tipo Operacion",
+                "Plan", "Estado Pago", "COMISION_REAL", "SEMANA_LABEL", "SEMANA_PAGO_RAW",
+                "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
+            ]
+            columnas_desc = [c for c in columnas_desc if c in df_sem_limpio.columns]
+            st.download_button(
+                "⬇️ Descargar Semana de Pago Teletalk",
+                data=df_sem_limpio[columnas_desc].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                file_name="semana_pago_teletalk_movil.csv",
+                mime="text/csv",
+                key="dl_semana_pago_teletalk_movil",
+                on_click=registrar_descarga,
+                args=("Detalle Móvil General", "semana_pago_teletalk_movil.csv", f"Fecha Venta: {', '.join(filtro_mes)} | Semana: {', '.join(filtro_semana_movil) if filtro_semana_movil else 'Todas'}")
+            )
 
     elif _vista_movil == "📦 Planes por Precio Oferta":
         st.markdown("#### 📦 Planes más vendidos por Modalidad")
