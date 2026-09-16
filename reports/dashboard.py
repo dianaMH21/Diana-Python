@@ -1817,15 +1817,187 @@ def render_dashboard():
                         except: pass
                     return (9999, 99)
 
+                def _npn_construir_90_dias_movil(canales_sel=None):
+                    archivos = []
+                    canales_sel = canales_sel or ["D&C", "Teletalk"]
+                    if "D&C" in canales_sel:
+                        archivos.append(("D&C", "CLARO_DC_MOVIL.csv"))
+                    if "Teletalk" in canales_sel:
+                        archivos.append(("Teletalk", "CLARO_TELETALK_MOVIL.csv"))
+
+                    frames = []
+                    for _canal_90, _archivo_90 in archivos:
+                        _df_90 = cargar_csv(_archivo_90)
+                        if _df_90.empty:
+                            continue
+                        _df_90 = _df_90.copy()
+                        _df_90.columns = _df_90.columns.astype(str).str.strip()
+                        _col_com_90 = encontrar_columna(_df_90, [
+                            "COMISION TOTAL", "COMISIÓN TOTAL", "COMISIÃ“N TOTAL",
+                            "Comision Total", "Comisión Total", "ComisiÃ³n Total", "MONTO"
+                        ])
+                        _col_fecha_90 = encontrar_columna(_df_90, [
+                            "FECHA OPERACION", "FECHA OPERACIÓN", "FECHA OPERACIÃ“N",
+                            "Fecha Operacion", "Fecha Operación", "Fecha OperaciÃ³n"
+                        ])
+                        _col_trans_90 = encontrar_columna(_df_90, [
+                            "TRANSACCION", "TRANSACCIÓN", "TRANSACCIÃ“N",
+                            "Transaccion", "Transacción", "TransacciÃ³n"
+                        ])
+                        _col_combo_90 = encontrar_columna(_df_90, ["COMBO", "Combo", "combo"])
+                        if not (_col_com_90 and _col_fecha_90 and _col_trans_90 and _col_combo_90):
+                            continue
+
+                        _out_90 = _df_90.copy()
+                        _out_90["Canal"] = _canal_90
+                        _out_90["COMISION TOTAL"] = pd.to_numeric(_out_90[_col_com_90], errors="coerce").fillna(0)
+                        _out_90["_FECHA_OPERACION_DT"] = _parse_fecha_movil_robusta(_out_90[_col_fecha_90])
+                        _hoy_90 = pd.Timestamp.today().normalize()
+                        _out_90["DIAS DESDE OPERACION"] = (_hoy_90 - _out_90["_FECHA_OPERACION_DT"]).dt.days
+                        _out_90 = _out_90[(_out_90["COMISION TOTAL"] > 0) & (_out_90["_FECHA_OPERACION_DT"].notna())].copy()
+                        if _out_90.empty:
+                            continue
+
+                        _trans_90 = _out_90[_col_trans_90].fillna("").astype(str).str.upper().str.strip()
+                        _combo_90 = _out_90[_col_combo_90].fillna("").astype(str).str.upper().str.strip()
+                        _out_90["ESTADO COMBO"] = _combo_90.apply(lambda x: "ACTIVADO" if "ACTIVO" in x else "CAIDA")
+                        _out_90["SEGMENTO"] = "Otros"
+                        _out_90.loc[_trans_90.str.contains("ALTA NUEVA|ALTA", regex=True, na=False), "SEGMENTO"] = "Línea Nueva"
+                        _mask_port_90 = _trans_90.str.contains("PORTABILIDAD", regex=False, na=False)
+                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] < 90), "SEGMENTO"] = "Portabilidad <90 días"
+                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] > 90), "SEGMENTO"] = "Portabilidad >90 días"
+                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] == 90), "SEGMENTO"] = "Portabilidad =90 días"
+                        _out_90 = _out_90[_out_90["SEGMENTO"] != "Otros"].copy()
+                        if _out_90.empty:
+                            continue
+
+                        _out_90["FECHA OPERACION"] = _out_90["_FECHA_OPERACION_DT"].dt.strftime("%d/%m/%Y")
+                        _out_90["FECHA CALCULO"] = _hoy_90.strftime("%d/%m/%Y")
+                        _out_90["LLEGA 3M"] = (_out_90["DIAS DESDE OPERACION"] >= 90) & (_out_90["ESTADO COMBO"].eq("ACTIVADO"))
+                        _out_90["LLEGA 6M"] = (_out_90["DIAS DESDE OPERACION"] >= 180) & (_out_90["ESTADO COMBO"].eq("ACTIVADO"))
+                        _out_90["CAIDA"] = _out_90["ESTADO COMBO"].eq("CAIDA")
+
+                        _cols_preferidas_90 = [
+                            "Canal", "SEGMENTO", "ESTADO COMBO", "FECHA OPERACION", "FECHA CALCULO",
+                            "DIAS DESDE OPERACION", "COMISION TOTAL", "SEC", "DNI CLIENTE", "CLIENTE",
+                            "TELEFONO", "TRANSACCION", "COMBO", "ASESOR", "SUPERVISOR"
+                        ]
+                        _cols_90 = [c for c in _cols_preferidas_90 if c in _out_90.columns]
+                        _cols_90 += [c for c in _out_90.columns if c not in _cols_90 and not str(c).startswith("_")][:8]
+                        frames.append(_out_90[_cols_90 + ["LLEGA 3M", "LLEGA 6M", "CAIDA"]].copy())
+
+                    if not frames:
+                        return pd.DataFrame(), pd.DataFrame()
+
+                    detalle = pd.concat(frames, ignore_index=True)
+                    orden_segmentos = ["Línea Nueva", "Portabilidad <90 días", "Portabilidad >90 días", "Portabilidad =90 días"]
+                    rows = []
+                    for seg in orden_segmentos:
+                        base = detalle[detalle["SEGMENTO"].eq(seg)].copy()
+                        activados = int((base["ESTADO COMBO"] == "ACTIVADO").sum()) if not base.empty else 0
+                        llegan_3m = int(base["LLEGA 3M"].sum()) if not base.empty else 0
+                        caida_3m = int(base["CAIDA"].sum()) if not base.empty else 0
+                        llegan_6m = int(base["LLEGA 6M"].sum()) if not base.empty else 0
+                        caida_36m = max(llegan_3m - llegan_6m, 0)
+                        rows.append({
+                            "SEGMENTO": seg,
+                            "ACTIVADOS": activados,
+                            "LLEGAN 3M": llegan_3m,
+                            "%": f"{(llegan_3m / activados * 100) if activados else 0:.2f}%",
+                            "CAÍDA-3M": caida_3m,
+                            "% CAÍDA-3M": f"{(caida_3m / activados * 100) if activados else 0:.2f}%",
+                            "LLEGAN 6M": llegan_6m,
+                            "% RET. 3-6M": f"{(llegan_6m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
+                            "CAÍDA 3-6M": caida_36m,
+                            "% CAÍDA 3-6M": f"{(caida_36m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
+                        })
+
+                    total_act = sum(r["ACTIVADOS"] for r in rows)
+                    total_3m = sum(r["LLEGAN 3M"] for r in rows)
+                    total_caida_3m = sum(r["CAÍDA-3M"] for r in rows)
+                    total_6m = sum(r["LLEGAN 6M"] for r in rows)
+                    total_caida_36m = sum(r["CAÍDA 3-6M"] for r in rows)
+                    rows.append({
+                        "SEGMENTO": "TOTAL",
+                        "ACTIVADOS": total_act,
+                        "LLEGAN 3M": total_3m,
+                        "%": f"{(total_3m / total_act * 100) if total_act else 0:.2f}%",
+                        "CAÍDA-3M": total_caida_3m,
+                        "% CAÍDA-3M": f"{(total_caida_3m / total_act * 100) if total_act else 0:.2f}%",
+                        "LLEGAN 6M": total_6m,
+                        "% RET. 3-6M": f"{(total_6m / total_3m * 100) if total_3m else 0:.2f}%",
+                        "CAÍDA 3-6M": total_caida_36m,
+                        "% CAÍDA 3-6M": f"{(total_caida_36m / total_3m * 100) if total_3m else 0:.2f}%",
+                    })
+                    resumen = pd.DataFrame(rows)
+                    return resumen, detalle.drop(columns=["LLEGA 3M", "LLEGA 6M", "CAIDA"], errors="ignore")
+
                 _npn_subvista = st.radio(
                     "Vista Resumen NPN",
-                    ["📈 Retención por Mes", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
+                    ["📈 Retención por Mes", "90 DIAS", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
                     horizontal=True,
                     label_visibility="collapsed",
                     key="npn_subvista_resumen"
                 )
 
-                if _npn_subvista == "📈 Retención por Mes":
+                if _npn_subvista == "90 DIAS":
+                    if _f_serv == "FIJA":
+                        st.info("La pestaña 90 DIAS usa solo archivos móviles. Cambia Servicio a Todos o MOVIL para ver la información.")
+                    else:
+                        _resumen_90, _df_90 = _npn_construir_90_dias_movil(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"])
+                        if _df_90.empty:
+                            st.warning("No se encontraron registros con COMISION TOTAL mayor a cero y FECHA OPERACION válida en CLARO_DC_MOVIL o CLARO_TELETALK_MOVIL.")
+                        else:
+                            _mayor_90 = int((_df_90["SEGMENTO"] == "Portabilidad >90 días").sum())
+                            _menor_90 = int((_df_90["SEGMENTO"] == "Portabilidad <90 días").sum())
+                            _igual_90 = int((_df_90["SEGMENTO"] == "Portabilidad =90 días").sum())
+                            _linea_nueva_90 = int((_df_90["SEGMENTO"] == "Línea Nueva").sum())
+                            _total_90 = int(len(_df_90))
+                            _com_mayor_90 = float(_df_90.loc[_df_90["SEGMENTO"].eq("Portabilidad >90 días"), "COMISION TOTAL"].sum())
+                            _com_menor_90 = float(_df_90.loc[_df_90["SEGMENTO"].eq("Portabilidad <90 días"), "COMISION TOTAL"].sum())
+                            _pct_mayor_90 = (_mayor_90 / _total_90 * 100) if _total_90 else 0.0
+
+                            st.markdown(f"""
+                            <div class="npn-kpi-row">
+                                <div class="npn-kpi-card" style="border-top-color:#0f4287;"><div class="npn-kpi-card-label">Total registros móvil</div><div class="npn-kpi-card-val">{_total_90:,}</div><div class="npn-kpi-card-sub">COMISION TOTAL &gt; 0</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#0891b2;"><div class="npn-kpi-card-label">Línea Nueva</div><div class="npn-kpi-card-val" style="color:#0891b2;">{_linea_nueva_90:,}</div><div class="npn-kpi-card-sub">TRANSACCION Alta Nueva</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#059669;"><div class="npn-kpi-card-label">Portabilidad &gt;90</div><div class="npn-kpi-card-val" style="color:#059669;">{_mayor_90:,}</div><div class="npn-kpi-card-sub">{_pct_mayor_90:.2f}% del total</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#ea580c;"><div class="npn-kpi-card-label">Portabilidad &lt;90</div><div class="npn-kpi-card-val" style="color:#ea580c;">{_menor_90:,}</div><div class="npn-kpi-card-sub">Desde FECHA OPERACION</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#64748b;"><div class="npn-kpi-card-label">Portabilidad =90</div><div class="npn-kpi-card-val" style="color:#64748b;">{_igual_90:,}</div><div class="npn-kpi-card-sub">Día exacto</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#7c3aed;"><div class="npn-kpi-card-label">Comisión &gt; 90</div><div class="npn-kpi-card-val" style="color:#7c3aed;">S/ {_com_mayor_90:,.0f}</div><div class="npn-kpi-card-sub">Suma comisión total</div></div>
+                                <div class="npn-kpi-card" style="border-top-color:#f59e0b;"><div class="npn-kpi-card-label">Comisión &lt; 90</div><div class="npn-kpi-card-val" style="color:#d97706;">S/ {_com_menor_90:,.0f}</div><div class="npn-kpi-card-sub">Suma comisión total</div></div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            java_table(
+                                _resumen_90,
+                                height=220,
+                                title="Resumen 90 DIAS",
+                                subtitle="Segmento desde TRANSACCION; días calculados desde FECHA OPERACION hasta hoy",
+                                accent="#059669",
+                                max_rows=50,
+                            )
+
+                            _detalle_90 = _df_90.copy()
+                            _detalle_90["DIAS DESDE OPERACION"] = _detalle_90["DIAS DESDE OPERACION"].astype(int)
+                            _detalle_90["COMISION TOTAL"] = _detalle_90["COMISION TOTAL"].map(lambda x: f"S/ {float(x):,.2f}")
+                            java_table(
+                                _detalle_90,
+                                height=520,
+                                title="Detalle 90 DIAS",
+                                subtitle="CLARO_DC_MOVIL y CLARO_TELETALK_MOVIL",
+                                accent="#0f4287",
+                                max_rows=None,
+                            )
+                            st.download_button(
+                                "Descargar 90 DIAS",
+                                data=_df_90.to_csv(index=False).encode("utf-8-sig"),
+                                file_name="npn_90_dias_movil.csv",
+                                mime="text/csv",
+                                key="dl_npn_90_dias",
+                            )
+
+                elif _npn_subvista == "📈 Retención por Mes":
                     col_ret_fija, col_ret_movil = st.columns(2)
 
                     # ── Tabla FIJA ──────────────────────────────────────────────
