@@ -835,6 +835,7 @@ def render_dashboard():
                 def _meses_desde_fecha(serie):
                     _fechas = _parse_fecha_movil_robusta(serie)
                     _fechas = pd.to_datetime(_fechas, errors="coerce", dayfirst=True)
+                    _fechas = _fechas.where(_fechas.dt.year.between(2020, 2035))
                     _fechas = _fechas.dropna()
                     if _fechas.empty:
                         return []
@@ -842,6 +843,35 @@ def render_dashboard():
                     _periodos = _periodos[_periodos <= _periodo_ultimo_mes_cerrado()]
                     _periodos = _periodos.drop_duplicates().sort_values()
                     return [f"{MESES_ES[p.month].capitalize()} {p.year}" for p in _periodos]
+
+                def _mes_label_desde_dt(_dt):
+                    if pd.isna(_dt) or not (2020 <= int(_dt.year) <= 2035):
+                        return ""
+                    return f"{MESES_ES[_dt.month].capitalize()} {_dt.year}"
+
+                def _opts_meses_npn_desde_claro():
+                    _meses = set()
+                    _fuentes = [
+                        ("CLARO_DC_MOVIL.csv", ["FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"]),
+                        ("CLARO_TELETALK_MOVIL.csv", ["FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"]),
+                        ("CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv", ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"]),
+                        ("CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv", ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"]),
+                        ("CLARO_DC_FIJA.csv", ["FECHA INSTALACION", "FECHA INSTALACIÓN", "Fecha Instalacion", "Fecha Instalación"]),
+                        ("CLARO_TELETALK_FIJA.csv", ["FECHA INSTALACION", "FECHA INSTALACIÓN", "Fecha Instalacion", "Fecha Instalación"]),
+                    ]
+                    for _archivo_m, _cols_m in _fuentes:
+                        _df_m = cargar_csv(_archivo_m)
+                        if _df_m.empty:
+                            continue
+                        _col_m = encontrar_columna(_df_m, _cols_m)
+                        if not _col_m:
+                            continue
+                        _meses.update(_meses_desde_fecha(_df_m[_col_m]))
+                    return sorted(
+                        _meses,
+                        key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))
+                        if len(str(s).split()) == 2 and str(s).split()[1].isdigit() else (9999, 99)
+                    )
 
                 _opts_serv = ["Todos"]
                 if _col_tipo:
@@ -860,7 +890,7 @@ def render_dashboard():
                         _opts_canal_display.append(str(_c).strip())
                 _opts_canal_display = sorted(set(_opts_canal_display), key=lambda x: {"D&C": 0, "Teletalk": 1}.get(x, 9)) or ["D&C", "Teletalk"]
                 _opts_fvta = _meses_desde_fecha(_df_npn.get("_FVTA_DT", _df_npn.get("FECHA DE VENTA", pd.Series([], dtype="object"))))
-                _opts_finst = _meses_desde_fecha(_df_npn.get("_FINST_DT", _df_npn.get("FECHA INSTALACION", pd.Series([], dtype="object"))))
+                _opts_finst = _opts_meses_npn_desde_claro()
                 _opts_sup = []
                 if _col_sup:
                     _opts_sup = sorted(_df_npn[_col_sup].fillna("").astype(str).str.strip().loc[lambda s: s != ""].unique().tolist())
@@ -889,7 +919,7 @@ def render_dashboard():
                     with _fc2:
                         _f_canal_sel = st.multiselect("Canal", _opts_canal_display, default=[], key="npn_canal_multi", placeholder="Todos los canales")
                     with _fc3:
-                        _f_finst = st.multiselect("Fecha de Instalación", _opts_finst, default=[], placeholder="Todas las fechas", key="npn_finst")
+                        _f_finst = st.multiselect("Mes CLARO", _opts_finst, default=[], placeholder="Todos los meses", key="npn_finst")
                     _f_estado_pago = []  # NPN no usa filtro visible de Estado de Pago.
                     _fc4, _fc5, _fc6 = st.columns(3)
                     with _fc4:
@@ -1817,9 +1847,10 @@ def render_dashboard():
                         except: pass
                     return (9999, 99)
 
-                def _npn_construir_90_dias_movil(canales_sel=None):
+                def _npn_construir_90_dias_movil(canales_sel=None, meses_sel=None):
                     archivos = []
                     canales_sel = canales_sel or ["D&C", "Teletalk"]
+                    meses_sel = meses_sel or []
                     if "D&C" in canales_sel:
                         archivos.append(("D&C", "CLARO_DC_MOVIL.csv"))
                     if "Teletalk" in canales_sel:
@@ -1832,6 +1863,92 @@ def render_dashboard():
                             continue
                         _df_90 = _df_90.copy()
                         _df_90.columns = _df_90.columns.astype(str).str.strip()
+
+                        if _canal_90 == "Teletalk":
+                            def _teletalk_90_etapa(_archivo_tt, _etapa_tt, _col_trans_posibles, _col_com_posibles, _col_fecha_posibles):
+                                _df_tt = cargar_csv(_archivo_tt)
+                                if _df_tt.empty:
+                                    return pd.DataFrame()
+                                _df_tt = _df_tt.copy()
+                                _df_tt.columns = _df_tt.columns.astype(str).str.strip()
+                                _col_trans_tt = encontrar_columna(_df_tt, _col_trans_posibles)
+                                _col_com_tt = encontrar_columna(_df_tt, _col_com_posibles)
+                                _col_fecha_tt = encontrar_columna(_df_tt, _col_fecha_posibles)
+                                _col_dias_tt = encontrar_columna(_df_tt, [
+                                    "DIAS PORTADAS", "DÍAS PORTADAS", "Dias Portadas", "Días Portadas"
+                                ])
+                                if not (_col_trans_tt and _col_com_tt and _col_fecha_tt and _col_dias_tt):
+                                    return pd.DataFrame()
+
+                                _out_tt = _df_tt.copy()
+                                _out_tt["Canal"] = "Teletalk"
+                                _out_tt["ETAPA 90 DIAS"] = _etapa_tt
+                                _out_tt["COMISION TOTAL"] = pd.to_numeric(_out_tt[_col_com_tt], errors="coerce").fillna(0)
+                                _out_tt["_FECHA_OPERACION_DT"] = _parse_fecha_movil_robusta(_out_tt[_col_fecha_tt])
+                                _out_tt["_MES_FILTRO_NPN"] = _out_tt["_FECHA_OPERACION_DT"].apply(_mes_label_desde_dt)
+                                if meses_sel:
+                                    _out_tt = _out_tt[_out_tt["_MES_FILTRO_NPN"].isin(meses_sel)].copy()
+                                _out_tt["DIAS PORTADAS"] = pd.to_numeric(_out_tt[_col_dias_tt], errors="coerce").fillna(0)
+                                _out_tt = _out_tt[(_out_tt["COMISION TOTAL"] > 0) & (_out_tt["_FECHA_OPERACION_DT"].notna())].copy()
+                                if _out_tt.empty:
+                                    return pd.DataFrame()
+
+                                _trans_tt = _out_tt[_col_trans_tt].fillna("").astype(str).str.upper().str.strip()
+                                _out_tt["ESTADO COMBO"] = "ACTIVADO"
+                                _out_tt["SEGMENTO"] = "Otros"
+                                _out_tt.loc[_trans_tt.str.contains("ALTA NUEVA|ALTA", regex=True, na=False), "SEGMENTO"] = "Línea Nueva"
+                                _mask_port_tt = _trans_tt.str.contains("PORTABILIDAD", regex=False, na=False)
+                                _out_tt.loc[_mask_port_tt & (_out_tt["DIAS PORTADAS"] < 90), "SEGMENTO"] = "Portabilidad <90 días"
+                                _out_tt.loc[_mask_port_tt & (_out_tt["DIAS PORTADAS"] > 90), "SEGMENTO"] = "Portabilidad >90 días"
+                                _out_tt.loc[_mask_port_tt & (_out_tt["DIAS PORTADAS"] == 90), "SEGMENTO"] = "Portabilidad =90 días"
+                                _out_tt = _out_tt[_out_tt["SEGMENTO"] != "Otros"].copy()
+                                if _out_tt.empty:
+                                    return pd.DataFrame()
+
+                                _hoy_tt = pd.Timestamp.today().normalize()
+                                _out_tt["DIAS DESDE OPERACION"] = (_hoy_tt - _out_tt["_FECHA_OPERACION_DT"]).dt.days
+                                _out_tt["FECHA OPERACION"] = _out_tt["_FECHA_OPERACION_DT"].dt.strftime("%d/%m/%Y")
+                                _out_tt["FECHA CALCULO"] = _hoy_tt.strftime("%d/%m/%Y")
+                                _out_tt["LLEGA 3M"] = _etapa_tt == "3M"
+                                _out_tt["LLEGA 6M"] = _etapa_tt == "6M"
+                                _out_tt["CAIDA"] = False
+                                _out_tt["MESES IMEI"] = 0
+
+                                _cols_preferidas_tt = [
+                                    "Canal", "ETAPA 90 DIAS", "SEGMENTO", "ESTADO COMBO", "FECHA OPERACION", "FECHA CALCULO",
+                                    "DIAS DESDE OPERACION", "DIAS PORTADAS", "COMISION TOTAL", "SEC", "DNI CLIENTE", "DNI RUC",
+                                    "CLIENTE", "TELEFONO", "MSISDN", "TRANSACCION", "TPO OPER", "ASESOR", "SUPERVISOR"
+                                ]
+                                _cols_tt = [c for c in _cols_preferidas_tt if c in _out_tt.columns]
+                                _cols_tt += [c for c in _out_tt.columns if c not in _cols_tt and not str(c).startswith("_")][:8]
+                                return _out_tt[_cols_tt + ["LLEGA 3M", "LLEGA 6M", "CAIDA"]].copy()
+
+                            _frames_tt = [
+                                _teletalk_90_etapa(
+                                    "CLARO_TELETALK_MOVIL.csv",
+                                    "ACTIVADOS",
+                                    ["TRANSACCION", "TRANSACCIÓN", "Transaccion", "Transacción"],
+                                    ["COMISION TOTAL", "COMISIÓN TOTAL", "COMISIÃ“N TOTAL", "Comision Total", "MONTO"],
+                                    ["FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"],
+                                ),
+                                _teletalk_90_etapa(
+                                    "CLARO_TELETALK_MOVIL_SEGUNDA_CAIDA.csv",
+                                    "3M",
+                                    ["TPO OPER", "TIPO OPER", "TRANSACCION", "TRANSACCIÓN"],
+                                    ["COMISION", "COMISIÓN", "Comision", "Comisión"],
+                                    ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"],
+                                ),
+                                _teletalk_90_etapa(
+                                    "CLARO_TELETALK_MOVIL_TERCERA_CAIDA.csv",
+                                    "6M",
+                                    ["TPO OPER", "TIPO OPER", "TRANSACCION", "TRANSACCIÓN"],
+                                    ["COMISION", "COMISIÓN", "Comision", "Comisión"],
+                                    ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"],
+                                ),
+                            ]
+                            frames.extend([_f for _f in _frames_tt if not _f.empty])
+                            continue
+
                         _col_com_90 = encontrar_columna(_df_90, [
                             "COMISION TOTAL", "COMISIÓN TOTAL", "COMISIÃ“N TOTAL",
                             "Comision Total", "Comisión Total", "ComisiÃ³n Total", "MONTO"
@@ -1845,15 +1962,31 @@ def render_dashboard():
                             "Transaccion", "Transacción", "TransacciÃ³n"
                         ])
                         _col_combo_90 = encontrar_columna(_df_90, ["COMBO", "Combo", "combo"])
+                        _col_dias_portadas_90 = encontrar_columna(_df_90, [
+                            "DIAS PORTADAS", "DÍAS PORTADAS", "Dias Portadas", "Días Portadas"
+                        ])
+                        _col_imei_90 = encontrar_columna(_df_90, ["IMEI", "Imei", "imei"])
                         if not (_col_com_90 and _col_fecha_90 and _col_trans_90 and _col_combo_90):
                             continue
 
                         _out_90 = _df_90.copy()
                         _out_90["Canal"] = _canal_90
+                        _out_90["ETAPA 90 DIAS"] = "ACTIVADOS"
                         _out_90["COMISION TOTAL"] = pd.to_numeric(_out_90[_col_com_90], errors="coerce").fillna(0)
                         _out_90["_FECHA_OPERACION_DT"] = _parse_fecha_movil_robusta(_out_90[_col_fecha_90])
+                        _out_90["_MES_FILTRO_NPN"] = _out_90["_FECHA_OPERACION_DT"].apply(_mes_label_desde_dt)
+                        if meses_sel:
+                            _out_90 = _out_90[_out_90["_MES_FILTRO_NPN"].isin(meses_sel)].copy()
                         _hoy_90 = pd.Timestamp.today().normalize()
                         _out_90["DIAS DESDE OPERACION"] = (_hoy_90 - _out_90["_FECHA_OPERACION_DT"]).dt.days
+                        _out_90["DIAS PORTADAS"] = (
+                            pd.to_numeric(_out_90[_col_dias_portadas_90], errors="coerce").fillna(0)
+                            if _col_dias_portadas_90 else 0
+                        )
+                        _out_90["MESES IMEI"] = (
+                            pd.to_numeric(_out_90[_col_imei_90], errors="coerce").fillna(0)
+                            if _col_imei_90 else 0
+                        )
                         _out_90 = _out_90[(_out_90["COMISION TOTAL"] > 0) & (_out_90["_FECHA_OPERACION_DT"].notna())].copy()
                         if _out_90.empty:
                             continue
@@ -1864,9 +1997,14 @@ def render_dashboard():
                         _out_90["SEGMENTO"] = "Otros"
                         _out_90.loc[_trans_90.str.contains("ALTA NUEVA|ALTA", regex=True, na=False), "SEGMENTO"] = "Línea Nueva"
                         _mask_port_90 = _trans_90.str.contains("PORTABILIDAD", regex=False, na=False)
-                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] < 90), "SEGMENTO"] = "Portabilidad <90 días"
-                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] > 90), "SEGMENTO"] = "Portabilidad >90 días"
-                        _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] == 90), "SEGMENTO"] = "Portabilidad =90 días"
+                        if _canal_90 == "D&C":
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS PORTADAS"] < 90), "SEGMENTO"] = "Portabilidad <90 días"
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS PORTADAS"] > 90), "SEGMENTO"] = "Portabilidad >90 días"
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS PORTADAS"] == 90), "SEGMENTO"] = "Portabilidad =90 días"
+                        else:
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] < 90), "SEGMENTO"] = "Portabilidad <90 días"
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] > 90), "SEGMENTO"] = "Portabilidad >90 días"
+                            _out_90.loc[_mask_port_90 & (_out_90["DIAS DESDE OPERACION"] == 90), "SEGMENTO"] = "Portabilidad =90 días"
                         _out_90 = _out_90[_out_90["SEGMENTO"] != "Otros"].copy()
                         if _out_90.empty:
                             continue
@@ -1875,11 +2013,14 @@ def render_dashboard():
                         _out_90["FECHA CALCULO"] = _hoy_90.strftime("%d/%m/%Y")
                         _out_90["LLEGA 3M"] = (_out_90["DIAS DESDE OPERACION"] >= 90) & (_out_90["ESTADO COMBO"].eq("ACTIVADO"))
                         _out_90["LLEGA 6M"] = (_out_90["DIAS DESDE OPERACION"] >= 180) & (_out_90["ESTADO COMBO"].eq("ACTIVADO"))
+                        if _canal_90 == "D&C":
+                            _out_90["LLEGA 3M"] = (_out_90["MESES IMEI"] >= 3) & (_out_90["ESTADO COMBO"].eq("ACTIVADO"))
+                            _out_90["LLEGA 6M"] = False
                         _out_90["CAIDA"] = _out_90["ESTADO COMBO"].eq("CAIDA")
 
                         _cols_preferidas_90 = [
                             "Canal", "SEGMENTO", "ESTADO COMBO", "FECHA OPERACION", "FECHA CALCULO",
-                            "DIAS DESDE OPERACION", "COMISION TOTAL", "SEC", "DNI CLIENTE", "CLIENTE",
+                            "DIAS DESDE OPERACION", "DIAS PORTADAS", "MESES IMEI", "COMISION TOTAL", "SEC", "DNI CLIENTE", "CLIENTE",
                             "TELEFONO", "TRANSACCION", "COMBO", "ASESOR", "SUPERVISOR"
                         ]
                         _cols_90 = [c for c in _cols_preferidas_90 if c in _out_90.columns]
@@ -1894,11 +2035,25 @@ def render_dashboard():
                     rows = []
                     for seg in orden_segmentos:
                         base = detalle[detalle["SEGMENTO"].eq(seg)].copy()
-                        activados = int((base["ESTADO COMBO"] == "ACTIVADO").sum()) if not base.empty else 0
-                        llegan_3m = int(base["LLEGA 3M"].sum()) if not base.empty else 0
-                        caida_3m = int(base["CAIDA"].sum()) if not base.empty else 0
-                        llegan_6m = int(base["LLEGA 6M"].sum()) if not base.empty else 0
-                        caida_36m = max(llegan_3m - llegan_6m, 0)
+                        base_dc = base[base["Canal"].eq("D&C")].copy() if "Canal" in base.columns else base.iloc[0:0].copy()
+                        base_tt = base[base["Canal"].eq("Teletalk")].copy() if "Canal" in base.columns else base.iloc[0:0].copy()
+                        activados_dc = int((base_dc["ESTADO COMBO"] == "ACTIVADO").sum()) if not base_dc.empty else 0
+                        activados_tt = int(base_tt["ETAPA 90 DIAS"].eq("ACTIVADOS").sum()) if not base_tt.empty and "ETAPA 90 DIAS" in base_tt.columns else 0
+                        llegan_3m_dc = int(base_dc["LLEGA 3M"].sum()) if not base_dc.empty else 0
+                        llegan_3m_tt = int(base_tt["LLEGA 3M"].sum()) if not base_tt.empty else 0
+                        llegan_6m_dc = 0
+                        llegan_6m_tt = int(base_tt["LLEGA 6M"].sum()) if not base_tt.empty else 0
+                        caida_3m_dc = max(activados_dc - llegan_3m_dc, 0)
+                        caida_3m_tt = max(activados_tt - llegan_3m_tt, 0)
+                        caida_36m_dc = 0
+                        caida_36m_tt = max(llegan_3m_tt - llegan_6m_tt, 0)
+                        activados = activados_dc + activados_tt
+                        llegan_3m = llegan_3m_dc + llegan_3m_tt
+                        caida_3m = caida_3m_dc + caida_3m_tt
+                        llegan_6m = llegan_6m_dc + llegan_6m_tt
+                        caida_36m = caida_36m_dc + caida_36m_tt
+                        comision_3m = float(base.loc[base["LLEGA 3M"], "COMISION TOTAL"].sum()) if not base.empty else 0.0
+                        comision_6m = float(base_tt.loc[base_tt["LLEGA 6M"], "COMISION TOTAL"].sum()) if not base_tt.empty else 0.0
                         rows.append({
                             "SEGMENTO": seg,
                             "ACTIVADOS": activados,
@@ -1906,10 +2061,12 @@ def render_dashboard():
                             "%": f"{(llegan_3m / activados * 100) if activados else 0:.2f}%",
                             "CAÍDA-3M": caida_3m,
                             "% CAÍDA-3M": f"{(caida_3m / activados * 100) if activados else 0:.2f}%",
+                            "COMISION TOTAL 3M": f"S/ {comision_3m:,.2f}",
                             "LLEGAN 6M": llegan_6m,
                             "% RET. 3-6M": f"{(llegan_6m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
                             "CAÍDA 3-6M": caida_36m,
                             "% CAÍDA 3-6M": f"{(caida_36m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
+                            "COMISION TOTAL 6M": f"S/ {comision_6m:,.2f}",
                         })
 
                     total_act = sum(r["ACTIVADOS"] for r in rows)
@@ -1917,6 +2074,8 @@ def render_dashboard():
                     total_caida_3m = sum(r["CAÍDA-3M"] for r in rows)
                     total_6m = sum(r["LLEGAN 6M"] for r in rows)
                     total_caida_36m = sum(r["CAÍDA 3-6M"] for r in rows)
+                    total_comision_3m = sum(float(str(r["COMISION TOTAL 3M"]).replace("S/", "").replace(",", "").strip()) for r in rows)
+                    total_comision_6m = sum(float(str(r["COMISION TOTAL 6M"]).replace("S/", "").replace(",", "").strip()) for r in rows)
                     rows.append({
                         "SEGMENTO": "TOTAL",
                         "ACTIVADOS": total_act,
@@ -1924,17 +2083,19 @@ def render_dashboard():
                         "%": f"{(total_3m / total_act * 100) if total_act else 0:.2f}%",
                         "CAÍDA-3M": total_caida_3m,
                         "% CAÍDA-3M": f"{(total_caida_3m / total_act * 100) if total_act else 0:.2f}%",
+                        "COMISION TOTAL 3M": f"S/ {total_comision_3m:,.2f}",
                         "LLEGAN 6M": total_6m,
                         "% RET. 3-6M": f"{(total_6m / total_3m * 100) if total_3m else 0:.2f}%",
                         "CAÍDA 3-6M": total_caida_36m,
                         "% CAÍDA 3-6M": f"{(total_caida_36m / total_3m * 100) if total_3m else 0:.2f}%",
+                        "COMISION TOTAL 6M": f"S/ {total_comision_6m:,.2f}",
                     })
                     resumen = pd.DataFrame(rows)
                     return resumen, detalle.drop(columns=["LLEGA 3M", "LLEGA 6M", "CAIDA"], errors="ignore")
 
                 _npn_subvista = st.radio(
                     "Vista Resumen NPN",
-                    ["📈 Retención por Mes", "90 DIAS", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
+                    ["90 DIAS", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
                     horizontal=True,
                     label_visibility="collapsed",
                     key="npn_subvista_resumen"
@@ -1944,7 +2105,7 @@ def render_dashboard():
                     if _f_serv == "FIJA":
                         st.info("La pestaña 90 DIAS usa solo archivos móviles. Cambia Servicio a Todos o MOVIL para ver la información.")
                     else:
-                        _resumen_90, _df_90 = _npn_construir_90_dias_movil(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"])
+                        _resumen_90, _df_90 = _npn_construir_90_dias_movil(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"], _f_finst)
                         if _df_90.empty:
                             st.warning("No se encontraron registros con COMISION TOTAL mayor a cero y FECHA OPERACION válida en CLARO_DC_MOVIL o CLARO_TELETALK_MOVIL.")
                         else:
@@ -1971,9 +2132,9 @@ def render_dashboard():
 
                             java_table(
                                 _resumen_90,
-                                height=220,
+                                height=250,
                                 title="Resumen 90 DIAS",
-                                subtitle="Segmento desde TRANSACCION; días calculados desde FECHA OPERACION hasta hoy",
+                                subtitle="D&C: 3M por IMEI. Teletalk: activados base, 3M segunda caída, 6M tercera caída",
                                 accent="#059669",
                                 max_rows=50,
                             )
@@ -2302,8 +2463,7 @@ def render_dashboard():
                                     ].copy()
                                 if _f_finst and "FECHA INSTALACION" in _sup_fija_det.columns:
                                     _sup_fija_det["_FINST_SUP"] = pd.to_datetime(_sup_fija_det["FECHA INSTALACION"], errors="coerce", dayfirst=True)
-                                    _sup_fija_det["_MES_INST_SUP"] = _sup_fija_det["_FINST_SUP"].apply(
-                                        lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                                    _sup_fija_det["_MES_INST_SUP"] = _sup_fija_det["_FINST_SUP"].apply(_mes_label_desde_dt)
                                     _sup_fija_det = _sup_fija_det[_sup_fija_det["_MES_INST_SUP"].isin(_f_finst)].copy()
                                 if _f_sup and "SUPERVISOR" in _sup_fija_det.columns:
                                     _sup_fija_det = _sup_fija_det[_sup_fija_det["SUPERVISOR"].fillna("").astype(str).str.strip().isin(_f_sup)].copy()
@@ -2341,9 +2501,8 @@ def render_dashboard():
                                         .isin([str(c).upper() for c in _f_canal_sel])
                                     ].copy()
                                 if _f_finst:
-                                    _sup_movil_det["_FINST_SUP"] = pd.to_datetime(_sup_movil_det.get("_FECHA_INSTALACION_DT", pd.NaT), errors="coerce")
-                                    _sup_movil_det["_MES_INST_SUP"] = _sup_movil_det["_FINST_SUP"].apply(
-                                        lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                                    _sup_movil_det["_FINST_SUP"] = pd.to_datetime(_sup_movil_det.get("_FECHA_OPERACION_DT", pd.NaT), errors="coerce")
+                                    _sup_movil_det["_MES_INST_SUP"] = _sup_movil_det["_FINST_SUP"].apply(_mes_label_desde_dt)
                                     _sup_movil_det = _sup_movil_det[_sup_movil_det["_MES_INST_SUP"].isin(_f_finst)].copy()
                                 if _f_sup and "SUPERVISOR" in _sup_movil_det.columns:
                                     _sup_movil_det = _sup_movil_det[_sup_movil_det["SUPERVISOR"].fillna("").astype(str).str.strip().isin(_f_sup)].copy()
@@ -2357,7 +2516,7 @@ def render_dashboard():
                                 else:
                                     _sup_movil_det = pd.DataFrame()
                                 if not _sup_movil_det.empty:
-                                    for _c in ["ASESOR", "SUPERVISOR", "COMISION"]:
+                                    for _c in ["ASESOR", "SUPERVISOR", "COMISION", "SEC"]:
                                         if _c not in _sup_movil_det.columns:
                                             _sup_movil_det[_c] = "" if _c != "COMISION" else 0
                                     _sup_movil_det["ASESOR"] = (_sup_movil_det["ASESOR"].fillna("Sin Asesor").astype(str)
@@ -2365,7 +2524,8 @@ def render_dashboard():
                                     _sup_movil_det["SUPERVISOR"] = (_sup_movil_det["SUPERVISOR"].fillna("Sin Supervisor").astype(str)
                                                                   .str.replace(r"\s+", " ", regex=True).str.strip().replace("", "Sin Supervisor").str.upper())
                                     _sup_movil_det["COMISION"] = pd.to_numeric(_sup_movil_det["COMISION"], errors="coerce").fillna(0)
-                                    _sup_movil_pag = _sup_movil_det[["ASESOR", "SUPERVISOR", "COMISION"]].copy()
+                                    _sup_movil_det["SEC"] = _sup_movil_det["SEC"].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                                    _sup_movil_pag = _sup_movil_det[["ASESOR", "SUPERVISOR", "COMISION", "SEC"]].copy()
 
                         _sup_base_rows = []
                         if not _sup_fija_pag.empty:
@@ -2402,7 +2562,7 @@ def render_dashboard():
                                     _cf2_sup["Netas 6 Meses"] = 0
                                     _sup_extra_rows.append(_cf2_sup[["SUPERVISOR", "ASESOR", "COMISION", "Pagadas", "Netas 3 Meses", "Netas 6 Meses"]])
 
-                        _sec_sup_map = _sup_base[_sup_base["_TIPO_NPN"] == "MOVIL"].copy()
+                        _sec_sup_map = _sup_movil_pag.copy()
                         if not _sec_sup_map.empty:
                             _sec_sup_map["_SEC_SUP"] = _sec_sup_map["SEC"].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
                             _sec_sup_map = _sec_sup_map[_sec_sup_map["_SEC_SUP"] != ""].drop_duplicates("_SEC_SUP")
@@ -2420,6 +2580,11 @@ def render_dashboard():
                             _df_c = _df_c.copy()
                             _df_c["_SEC_SUP"] = _df_c[_col_sec_c].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
                             _df_c["COMISION"] = pd.to_numeric(_df_c[_col_com_c], errors="coerce").fillna(0)
+                            if _f_finst:
+                                _col_fecha_c = encontrar_columna(_df_c, ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"])
+                                if _col_fecha_c:
+                                    _df_c["_MES_FILTRO_NPN"] = _parse_fecha_movil_robusta(_df_c[_col_fecha_c]).apply(_mes_label_desde_dt)
+                                    _df_c = _df_c[_df_c["_MES_FILTRO_NPN"].isin(_f_finst)].copy()
                             _df_c = _df_c[(_df_c["_SEC_SUP"] != "") & (_df_c["COMISION"] > 0)].copy()
                             _df_c = _df_c.merge(_sec_sup_map[["_SEC_SUP", "ASESOR", "SUPERVISOR"]], on="_SEC_SUP", how="inner")
                             if _df_c.empty:
@@ -2574,8 +2739,7 @@ def render_dashboard():
                                     ].copy()
                                 if _f_finst and "FECHA INSTALACION" in _rank_fija_det.columns:
                                     _rank_fija_det["_FINST_RANK"] = pd.to_datetime(_rank_fija_det["FECHA INSTALACION"], errors="coerce", dayfirst=True)
-                                    _rank_fija_det["_MES_INST_RANK"] = _rank_fija_det["_FINST_RANK"].apply(
-                                        lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                                    _rank_fija_det["_MES_INST_RANK"] = _rank_fija_det["_FINST_RANK"].apply(_mes_label_desde_dt)
                                     _rank_fija_det = _rank_fija_det[_rank_fija_det["_MES_INST_RANK"].isin(_f_finst)].copy()
                                 if _f_sup and "SUPERVISOR" in _rank_fija_det.columns:
                                     _rank_fija_det = _rank_fija_det[_rank_fija_det["SUPERVISOR"].fillna("").astype(str).str.strip().isin(_f_sup)].copy()
@@ -2617,9 +2781,8 @@ def render_dashboard():
                                         .isin([str(c).upper() for c in _f_canal_sel])
                                     ].copy()
                                 if _f_finst:
-                                    _rank_movil_det["_FINST_RANK"] = pd.to_datetime(_rank_movil_det.get("_FECHA_INSTALACION_DT", pd.NaT), errors="coerce")
-                                    _rank_movil_det["_MES_INST_RANK"] = _rank_movil_det["_FINST_RANK"].apply(
-                                        lambda d: f"{MESES_ES[d.month]} {d.year}" if pd.notna(d) else "")
+                                    _rank_movil_det["_FINST_RANK"] = pd.to_datetime(_rank_movil_det.get("_FECHA_OPERACION_DT", pd.NaT), errors="coerce")
+                                    _rank_movil_det["_MES_INST_RANK"] = _rank_movil_det["_FINST_RANK"].apply(_mes_label_desde_dt)
                                     _rank_movil_det = _rank_movil_det[_rank_movil_det["_MES_INST_RANK"].isin(_f_finst)].copy()
                                 if _f_sup and "SUPERVISOR" in _rank_movil_det.columns:
                                     _rank_movil_det = _rank_movil_det[_rank_movil_det["SUPERVISOR"].fillna("").astype(str).str.strip().isin(_f_sup)].copy()
@@ -2635,7 +2798,7 @@ def render_dashboard():
                                 else:
                                     _rank_movil_det = pd.DataFrame()
                                 if not _rank_movil_det.empty:
-                                    for _c in ["ASESOR", "SUPERVISOR", "COMISION"]:
+                                    for _c in ["ASESOR", "SUPERVISOR", "COMISION", "SEC"]:
                                         if _c not in _rank_movil_det.columns:
                                             _rank_movil_det[_c] = "" if _c != "COMISION" else 0
                                     _rank_movil_det["ASESOR"] = (_rank_movil_det["ASESOR"].fillna("Sin Asesor").astype(str)
@@ -2643,7 +2806,8 @@ def render_dashboard():
                                     _rank_movil_det["SUPERVISOR"] = (_rank_movil_det["SUPERVISOR"].fillna("Sin Supervisor").astype(str)
                                                                   .str.replace(r"\s+", " ", regex=True).str.strip().replace("", "Sin Supervisor").str.upper())
                                     _rank_movil_det["COMISION"] = pd.to_numeric(_rank_movil_det["COMISION"], errors="coerce").fillna(0)
-                                    _rank_movil_pag = _rank_movil_det[["ASESOR", "SUPERVISOR", "COMISION"]].copy()
+                                    _rank_movil_det["SEC"] = _rank_movil_det["SEC"].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                                    _rank_movil_pag = _rank_movil_det[["ASESOR", "SUPERVISOR", "COMISION", "SEC"]].copy()
 
                         _rank_people_parts = [_rank_base[["ASESOR", "SUPERVISOR"]]]
                         if not _rank_fija_pag.empty:
@@ -2725,7 +2889,7 @@ def render_dashboard():
                                     _extra_rows.append(_cf2_rank.assign(_NETAS_3=1, _NETAS_6=0)[["ASESOR", "_NETAS_3", "_NETAS_6", "_COM_CAIDA"]])
 
                         # MOVIL 3M/6M: SEC con duplicados, como se pidio para movil.
-                        _sec_map = _rank_base[_rank_base["_TIPO_NPN"] == "MOVIL"].copy()
+                        _sec_map = _rank_movil_pag.copy()
                         if not _sec_map.empty:
                             _sec_map["_SEC_RANK"] = _sec_map["SEC"].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
                             _sec_map = _sec_map[_sec_map["_SEC_RANK"] != ""].drop_duplicates("_SEC_RANK")
@@ -2743,6 +2907,11 @@ def render_dashboard():
                             _df_c = _df_c.copy()
                             _df_c["_SEC_RANK"] = _df_c[_col_sec_c].fillna("").astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
                             _df_c["_COM_CAIDA"] = pd.to_numeric(_df_c[_col_com_c], errors="coerce").fillna(0)
+                            if _f_finst:
+                                _col_fecha_c = encontrar_columna(_df_c, ["FEC ACTIV CTR", "FEC. ACTIV CTR", "FECHA ACTIV CTR", "FECHA OPERACION"])
+                                if _col_fecha_c:
+                                    _df_c["_MES_FILTRO_NPN"] = _parse_fecha_movil_robusta(_df_c[_col_fecha_c]).apply(_mes_label_desde_dt)
+                                    _df_c = _df_c[_df_c["_MES_FILTRO_NPN"].isin(_f_finst)].copy()
                             _df_c = _df_c[(_df_c["_SEC_RANK"] != "") & (_df_c["_COM_CAIDA"] > 0)].copy()
                             _df_c = _df_c.merge(_sec_map[["_SEC_RANK", "ASESOR"]], on="_SEC_RANK", how="inner")
                             if _df_c.empty:
