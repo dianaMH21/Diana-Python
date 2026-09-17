@@ -9,16 +9,10 @@ def _leer_csv_npn_local_cacheado(nombre, mtime=None):
     ruta = os.path.join(DATA_DIR, nombre)
     if not os.path.exists(ruta):
         return pd.DataFrame()
-    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
-        for sep in [";", ",", "\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, engine="python", on_bad_lines="skip")
-                df.columns = df.columns.astype(str).str.strip()
-                if len(df.columns) > 1:
-                    return df
-            except Exception:
-                continue
-    return pd.DataFrame()
+    try:
+        return _data_loader._read_csv_rapido(ruta)
+    except Exception:
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -39,16 +33,10 @@ def _leer_operativa_teletalk_cacheado(mtime=None):
             return df
         except Exception:
             return pd.DataFrame()
-    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
-        for sep in [";", ",", "\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, engine="python", on_bad_lines="skip")
-                df.columns = df.columns.astype(str).str.strip()
-                if len(df.columns) > 1:
-                    return df
-            except Exception:
-                continue
-    return pd.DataFrame()
+    try:
+        return _data_loader._read_csv_rapido(ruta)
+    except Exception:
+        return pd.DataFrame()
 
 
 def _fe_col(df, opciones):
@@ -849,7 +837,8 @@ def render_dashboard():
                         return ""
                     return f"{MESES_ES[_dt.month].capitalize()} {_dt.year}"
 
-                def _opts_meses_npn_desde_claro():
+                @st.cache_data(ttl=3600, show_spinner=False)
+                def _opts_meses_npn_desde_claro(_cache_version="v1"):
                     _meses = set()
                     _fuentes = [
                         ("CLARO_DC_MOVIL.csv", ["FECHA OPERACION", "FECHA OPERACIÓN", "Fecha Operacion", "Fecha Operación"]),
@@ -860,7 +849,7 @@ def render_dashboard():
                         ("CLARO_TELETALK_FIJA.csv", ["FECHA INSTALACION", "FECHA INSTALACIÓN", "Fecha Instalacion", "Fecha Instalación"]),
                     ]
                     for _archivo_m, _cols_m in _fuentes:
-                        _df_m = cargar_csv(_archivo_m)
+                        _df_m = _leer_csv_npn_local_cacheado(_archivo_m)
                         if _df_m.empty:
                             continue
                         _col_m = encontrar_columna(_df_m, _cols_m)
@@ -1847,10 +1836,11 @@ def render_dashboard():
                         except: pass
                     return (9999, 99)
 
-                def _npn_construir_90_dias_movil(canales_sel=None, meses_sel=None):
+                @st.cache_data(ttl=3600, show_spinner=False)
+                def _npn_construir_90_dias_movil(canales_key=("D&C", "Teletalk"), meses_key=(), _cache_version="v1"):
                     archivos = []
-                    canales_sel = canales_sel or ["D&C", "Teletalk"]
-                    meses_sel = meses_sel or []
+                    canales_sel = list(canales_key) if canales_key else ["D&C", "Teletalk"]
+                    meses_sel = list(meses_key) if meses_key else []
                     if "D&C" in canales_sel:
                         archivos.append(("D&C", "CLARO_DC_MOVIL.csv"))
                     if "Teletalk" in canales_sel:
@@ -1858,7 +1848,7 @@ def render_dashboard():
 
                     frames = []
                     for _canal_90, _archivo_90 in archivos:
-                        _df_90 = cargar_csv(_archivo_90)
+                        _df_90 = _leer_csv_npn_local_cacheado(_archivo_90)
                         if _df_90.empty:
                             continue
                         _df_90 = _df_90.copy()
@@ -1866,7 +1856,7 @@ def render_dashboard():
 
                         if _canal_90 == "Teletalk":
                             def _teletalk_90_etapa(_archivo_tt, _etapa_tt, _col_trans_posibles, _col_com_posibles, _col_fecha_posibles):
-                                _df_tt = cargar_csv(_archivo_tt)
+                                _df_tt = _leer_csv_npn_local_cacheado(_archivo_tt)
                                 if _df_tt.empty:
                                     return pd.DataFrame()
                                 _df_tt = _df_tt.copy()
@@ -2105,7 +2095,11 @@ def render_dashboard():
                     if _f_serv == "FIJA":
                         st.info("La pestaña 90 DIAS usa solo archivos móviles. Cambia Servicio a Todos o MOVIL para ver la información.")
                     else:
-                        _resumen_90, _df_90 = _npn_construir_90_dias_movil(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"], _f_finst)
+                        _resumen_90, _df_90 = _npn_construir_90_dias_movil(
+                            tuple(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"]),
+                            tuple(_f_finst),
+                            "v2"
+                        )
                         if _df_90.empty:
                             st.warning("No se encontraron registros con COMISION TOTAL mayor a cero y FECHA OPERACION válida en CLARO_DC_MOVIL o CLARO_TELETALK_MOVIL.")
                         else:
@@ -2490,7 +2484,11 @@ def render_dashboard():
 
                         _sup_movil_pag = pd.DataFrame(columns=["ASESOR", "SUPERVISOR", "COMISION"])
                         if _f_serv != "FIJA":
-                            _sup_movil_det = construir_resumen_movil_general("Todos los meses")
+                            _sup_movil_det = (
+                                st.session_state["npn_movil_cache"].copy()
+                                if "npn_movil_cache" in st.session_state and "_FECHA_OPERACION_DT" in st.session_state["npn_movil_cache"].columns
+                                else construir_resumen_movil_general("Todos los meses")
+                            )
                             if not _sup_movil_det.empty:
                                 _sup_movil_det = _sup_movil_det.copy()
                                 if "Venta Valida" in _sup_movil_det.columns:
@@ -2770,7 +2768,11 @@ def render_dashboard():
                         # así el ranking cuadra con sus Pagadas por Fecha Instalación.
                         _rank_movil_pag = pd.DataFrame(columns=["ASESOR", "SUPERVISOR", "COMISION"])
                         if _f_serv != "FIJA":
-                            _rank_movil_det = construir_resumen_movil_general("Todos los meses")
+                            _rank_movil_det = (
+                                st.session_state["npn_movil_cache"].copy()
+                                if "npn_movil_cache" in st.session_state and "_FECHA_OPERACION_DT" in st.session_state["npn_movil_cache"].columns
+                                else construir_resumen_movil_general("Todos los meses")
+                            )
                             if not _rank_movil_det.empty:
                                 _rank_movil_det = _rank_movil_det.copy()
                                 if "Venta Valida" in _rank_movil_det.columns:

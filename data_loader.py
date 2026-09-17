@@ -7,6 +7,36 @@ import streamlit as st
 from api_client import fetch_dataset, fetch_dvz_from_api
 from config import DATA_DIR, CSV_MAP, _DVZ_SPLIT_MAP
 
+def _detectar_separador(ruta, encoding):
+    try:
+        with open(ruta, "r", encoding=encoding, errors="ignore") as f:
+            header = f.readline()
+    except Exception:
+        return ";"
+    conteos = {sep: header.count(sep) for sep in [";", ",", "\t"]}
+    return max(conteos, key=conteos.get) if any(conteos.values()) else ";"
+
+def _read_csv_rapido(ruta):
+    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
+        try:
+            sep = _detectar_separador(ruta, enc)
+            df = pd.read_csv(
+                ruta,
+                encoding=enc,
+                sep=sep,
+                on_bad_lines="skip",
+                low_memory=False,
+                memory_map=True,
+            )
+            df.columns = df.columns.astype(str).str.strip()
+            if len(df.columns) > 1:
+                return df
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            continue
+    return pd.DataFrame()
+
 @st.cache_data(ttl=600, show_spinner=False)
 def _leer_dvz_crudo():
     _cache_version = "dvz_api_closed_month_v1"
@@ -18,17 +48,7 @@ def _leer_dvz_crudo():
     ruta = os.path.join(DATA_DIR, "DVZ.csv")
     if not os.path.exists(ruta):
         return pd.DataFrame()
-    for enc in ["utf-8-sig","utf-8","cp1252","latin-1","iso-8859-1"]:
-        for sep in [";",",","\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
-                df.columns = df.columns.str.strip()
-                if len(df.columns) > 1: return df
-            except UnicodeDecodeError:
-                continue
-            except Exception:
-                continue
-    return pd.DataFrame()
+    return _read_csv_rapido(ruta)
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _cargar_dvz_filtrado(nombre):
@@ -64,22 +84,13 @@ def cargar_csv(nombre):
         return pd.DataFrame()
 
     ruta = os.path.join(DATA_DIR, nombre)
-    for enc in ["utf-8-sig","utf-8","cp1252","latin-1","iso-8859-1"]:
-        for sep in [";",",","\t"]:
-            try:
-                df = pd.read_csv(ruta, encoding=enc, sep=sep, on_bad_lines="skip", engine="python")
-                df.columns = df.columns.str.strip()
-                if len(df.columns) > 1:
-                    return df
-            except FileNotFoundError:
-                st.warning(f"Archivo no encontrado: {ruta}")
-                return pd.DataFrame()
-            except UnicodeDecodeError:
-                continue
-            except Exception:
-                continue
-    st.error(f"No se pudo leer {nombre}")
-    return pd.DataFrame()
+    if not os.path.exists(ruta):
+        st.warning(f"Archivo no encontrado: {ruta}")
+        return pd.DataFrame()
+    df = _read_csv_rapido(ruta)
+    if df.empty:
+        st.error(f"No se pudo leer {nombre}")
+    return df
 
 def get_tabla(nombre):
     # Usar un caché en session_state para evitar volver a leer/parsear
