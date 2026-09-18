@@ -1,4 +1,4 @@
-﻿from .common import *
+from .common import *
 from .fija import *
 from .movil import *
 from urllib.parse import quote
@@ -802,10 +802,7 @@ def render_dashboard():
                 _col_fvta_r   = next((c for c in _df_npn.columns if c.strip().upper() in
                             ["FECHA DE VENTA","Fecha de Venta","Fecha Venta","FECHA VENTA"]), None)
                 _col_sot_r    = next((c for c in _df_npn.columns if c.strip().lower() == "back office - sot"), None)
-                _col_tipis = encontrar_columna(_df_npn, [
-                    "Estados - Venta Especificacion", "Estados - Venta Especificación",
-                    "TIPIS", "Tipificacion", "Tipificación", "Estado Venta", "ESTADO VENTA"
-                ])
+                _col_tipis = encontrar_columna(_df_npn, ["Estados - Estado Venta"])
                 _col_ext_npn = encontrar_columna(_df_npn, [
                     "EXTENSION DEL USUARIO", "EXTENSIÓN DEL USUARIO", "Extension del usuario",
                     "EXTENSION", "Extension", "USUARIO", "Usuario"

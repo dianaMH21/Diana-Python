@@ -1,4 +1,4 @@
-﻿from .common import *
+from .common import *
 from .fija import *
 
 def _limpiar_numero_movil(serie):
@@ -873,12 +873,7 @@ def _obtener_supervisor_movil_general(df):
     return pd.Series(["Sin Supervisor"] * len(df), index=df.index), "NO ENCONTRADA"
 
 def _obtener_tipificacion_movil_general(df):
-    col = encontrar_columna_flexible(df, [
-        "Estados - Venta Especificacion",
-        "Estados - Venta Especificación",
-        "ESTADOS - VENTA ESPECIFICACION",
-        "ESTADOS - VENTA ESPECIFICACIÓN"
-    ])
+    col = encontrar_columna(df, ["Estados - Estado Venta"])
     if col: return ( df[col] .fillna("Sin Tipificación") .astype(str) .str.replace(r" ", " ", regex=False) .str.replace(r"\s+", " ", regex=True) .str.strip() .replace("", "Sin Tipificación") ), col
     return pd.Series(["Sin Tipificación"] * len(df), index=df.index), "NO ENCONTRADA"
 
@@ -886,8 +881,8 @@ def _obtener_tipificacion_movil_general(df):
 def obtener_tipificaciones_solo_movil_general():
     """
     Opciones del filtro Tipificación para Detalle Móvil General.
-    IMPORTANTE: lee SOLO MOVIL_DC.csv y MOVIL_TELETALK.csv,
-    y SOLO la columna Estados - Venta Especificacion.
+    Lee los registros MOVIL de DVZ mediante cargar_csv, por canal,
+    y SOLO la columna Estados - Estado Venta.
     No usa FIJA, no usa CLARO y no mezcla TIPIS de otras pestañas.
     """
     opciones = set()
@@ -896,12 +891,7 @@ def obtener_tipificaciones_solo_movil_general():
         if df.empty: continue
 
         # Búsqueda estricta de la columna solicitada en móviles.
-        col = encontrar_columna_flexible(df, [
-            "Estados - Venta Especificacion",
-            "Estados - Venta Especificación",
-            "ESTADOS - VENTA ESPECIFICACION",
-            "ESTADOS - VENTA ESPECIFICACIÓN"
-        ])
+        col = encontrar_columna(df, ["Estados - Estado Venta"])
         if not col: continue
 
         serie = (

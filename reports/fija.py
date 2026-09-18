@@ -1,4 +1,4 @@
-﻿from .common import *
+from .common import *
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_meses_fija(col):
@@ -410,11 +410,16 @@ def _obtener_departamento_develz(df):
     return (df[col].fillna("Sin Datos").astype(str).str.strip().replace("","Sin Datos")
             if col else pd.Series(["Sin Datos"] * len(df), index=df.index))
 
-def _obtener_tipis_develz(df):
+def _obtener_especificacion_venta_develz(df):
     col = encontrar_columna(df, ["TIPIS","Tipis","tipis","Estados - Venta Especificacion",
                                   "Estados - Venta Especificación","Estado - Venta Especificacion",
                                   "Estado - Venta Especificación","ESTADO OPERATIVO","Estado Operativo","estado operativo"])
     return (df[col].fillna("Sin TIPIS").astype(str).str.strip().replace("","Sin TIPIS")
+            if col else pd.Series(["Sin TIPIS"] * len(df), index=df.index))
+
+def _obtener_tipis_develz(df):
+    col = encontrar_columna(df, ["Estados - Estado Venta"])
+    return (df[col].fillna("Sin TIPIS").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().replace("", "Sin TIPIS")
             if col else pd.Series(["Sin TIPIS"] * len(df), index=df.index))
 
 def _obtener_documento_develz(df):
@@ -477,8 +482,9 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
         df_m["ASESOR"] = _obtener_asesor_creador_develz(df_m)
         df_m["Nombre del Cliente"] = _obtener_nombre_cliente_develz(df_m)
         df_m["Departamento"] = _obtener_departamento_develz(df_m)
+        estado_operativo = _obtener_especificacion_venta_develz(df_m).apply(_estado_desde_tipis)
         df_m["TIPIS"] = _obtener_tipis_develz(df_m)
-        df_m["Estado Operativo"] = df_m["TIPIS"].apply(_estado_desde_tipis)
+        df_m["Estado Operativo"] = estado_operativo
         df_pago = _base_claro_pago(tabla_claro)
         df = df_m.merge(df_pago, on="SOT", how="left")
 

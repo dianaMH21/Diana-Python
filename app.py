@@ -14,7 +14,7 @@ except ImportError:
 
 def main():
     st.set_page_config(page_title=APP_TITLE, layout=APP_LAYOUT, initial_sidebar_state="expanded")
-    app_code_version = "csv_fast_loader_v1"
+    app_code_version = "tipificacion_estado_venta_v2"
     if st.session_state.get("_APP_CODE_VERSION") != app_code_version:
         st.cache_data.clear()
         for key in [
@@ -24,6 +24,10 @@ def main():
             "_dvz_mtime",
             "_npn_schema_version",
             "_COMMON_TABLES_PRELOADED",
+            "_TABLE_CACHE",
+            "npn_tipificacion",
+            "movil_tipificacion",
+            "det_general_tipificacion",
         ]:
             if key in st.session_state:
                 del st.session_state[key]

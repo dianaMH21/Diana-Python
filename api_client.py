@@ -184,6 +184,7 @@ def normalize_crm_products_to_dvz(reports: list[dict]) -> pd.DataFrame:
             "Estados - Llamada": data.get("main_state", ""),
             "Estados - Especificacion": data.get("sub_state", ""),
             "Estados - Venta": data.get("sale_state", ""),
+            "Estados - Estado Venta": data.get("sale_state", ""),
             "Estados - Venta Especificacion": sale_sub,
             "Estados - Venta Especificación": sale_sub,
             "TIPIS": sale_sub,
