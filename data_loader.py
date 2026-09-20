@@ -1,5 +1,6 @@
 import os
 import re
+import hashlib
 
 import pandas as pd
 import streamlit as st
@@ -16,7 +17,28 @@ def _detectar_separador(ruta, encoding):
     conteos = {sep: header.count(sep) for sep in [";", ",", "\t"]}
     return max(conteos, key=conteos.get) if any(conteos.values()) else ";"
 
+def _ruta_cache_csv(ruta):
+    try:
+        stat = os.stat(ruta)
+        base = f"{os.path.abspath(ruta)}|{stat.st_mtime_ns}|{stat.st_size}"
+        digest = hashlib.md5(base.encode("utf-8", errors="ignore")).hexdigest()
+        cache_dir = os.path.join(DATA_DIR, ".csv_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        return os.path.join(cache_dir, f"{digest}.pkl")
+    except Exception:
+        return None
+
 def _read_csv_rapido(ruta):
+    cache_path = _ruta_cache_csv(ruta)
+    if cache_path and os.path.exists(cache_path):
+        try:
+            return pd.read_pickle(cache_path)
+        except Exception:
+            try:
+                os.remove(cache_path)
+            except Exception:
+                pass
+
     for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
         try:
             sep = _detectar_separador(ruta, enc)
@@ -30,6 +52,11 @@ def _read_csv_rapido(ruta):
             )
             df.columns = df.columns.astype(str).str.strip()
             if len(df.columns) > 1:
+                if cache_path:
+                    try:
+                        df.to_pickle(cache_path)
+                    except Exception:
+                        pass
                 return df
         except UnicodeDecodeError:
             continue

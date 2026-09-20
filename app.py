@@ -14,7 +14,7 @@ except ImportError:
 
 def main():
     st.set_page_config(page_title=APP_TITLE, layout=APP_LAYOUT, initial_sidebar_state="expanded")
-    app_code_version = "csv_fast_loader_v1"
+    app_code_version = "npn_fast_render_limit_v1"
     if st.session_state.get("_APP_CODE_VERSION") != app_code_version:
         st.cache_data.clear()
         for key in [

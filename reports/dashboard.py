@@ -1837,10 +1837,36 @@ def render_dashboard():
                     return (9999, 99)
 
                 @st.cache_data(ttl=3600, show_spinner=False)
-                def _npn_construir_90_dias_movil(canales_key=("D&C", "Teletalk"), meses_key=(), _cache_version="v1"):
+                def _npn_construir_90_dias_movil(
+                    canales_key=("D&C", "Teletalk"),
+                    meses_key=(),
+                    supervisor_docs_key=(),
+                    supervisor_secs_key=(),
+                    _cache_version="v1",
+                ):
                     archivos = []
                     canales_sel = list(canales_key) if canales_key else ["D&C", "Teletalk"]
                     meses_sel = list(meses_key) if meses_key else []
+                    supervisor_docs = {str(x).strip() for x in (supervisor_docs_key or ()) if str(x).strip()}
+                    supervisor_secs = {str(x).strip() for x in (supervisor_secs_key or ()) if str(x).strip()}
+                    usar_filtro_supervisor_90 = bool(supervisor_docs or supervisor_secs)
+
+                    def _norm_id_90(value):
+                        if pd.isna(value):
+                            return ""
+                        return re.sub(r"\D", "", str(value).strip().replace(".0", ""))
+
+                    def _aplicar_supervisor_90(df):
+                        if not usar_filtro_supervisor_90 or df.empty:
+                            return df
+                        _mask = pd.Series([False] * len(df), index=df.index)
+                        for _col_doc_90 in ["DNI CLIENTE", "DNI RUC", "DOCUMENTO", "Documento", "RUC"]:
+                            if _col_doc_90 in df.columns and supervisor_docs:
+                                _mask |= df[_col_doc_90].map(_norm_id_90).isin(supervisor_docs)
+                        if "SEC" in df.columns and supervisor_secs:
+                            _mask |= df["SEC"].map(_norm_id_90).isin(supervisor_secs)
+                        return df[_mask].copy()
+
                     if "D&C" in canales_sel:
                         archivos.append(("D&C", "CLARO_DC_MOVIL.csv"))
                     if "Teletalk" in canales_sel:
@@ -1878,6 +1904,7 @@ def render_dashboard():
                                 _out_tt["_MES_FILTRO_NPN"] = _out_tt["_FECHA_OPERACION_DT"].apply(_mes_label_desde_dt)
                                 if meses_sel:
                                     _out_tt = _out_tt[_out_tt["_MES_FILTRO_NPN"].isin(meses_sel)].copy()
+                                _out_tt = _aplicar_supervisor_90(_out_tt)
                                 _out_tt["DIAS PORTADAS"] = pd.to_numeric(_out_tt[_col_dias_tt], errors="coerce").fillna(0)
                                 _out_tt = _out_tt[(_out_tt["COMISION TOTAL"] > 0) & (_out_tt["_FECHA_OPERACION_DT"].notna())].copy()
                                 if _out_tt.empty:
@@ -1967,6 +1994,7 @@ def render_dashboard():
                         _out_90["_MES_FILTRO_NPN"] = _out_90["_FECHA_OPERACION_DT"].apply(_mes_label_desde_dt)
                         if meses_sel:
                             _out_90 = _out_90[_out_90["_MES_FILTRO_NPN"].isin(meses_sel)].copy()
+                        _out_90 = _aplicar_supervisor_90(_out_90)
                         _hoy_90 = pd.Timestamp.today().normalize()
                         _out_90["DIAS DESDE OPERACION"] = (_hoy_90 - _out_90["_FECHA_OPERACION_DT"]).dt.days
                         _out_90["DIAS PORTADAS"] = (
@@ -2035,13 +2063,11 @@ def render_dashboard():
                         llegan_6m_tt = int(base_tt["LLEGA 6M"].sum()) if not base_tt.empty else 0
                         caida_3m_dc = max(activados_dc - llegan_3m_dc, 0)
                         caida_3m_tt = max(activados_tt - llegan_3m_tt, 0)
-                        caida_36m_dc = 0
-                        caida_36m_tt = max(llegan_3m_tt - llegan_6m_tt, 0)
                         activados = activados_dc + activados_tt
                         llegan_3m = llegan_3m_dc + llegan_3m_tt
                         caida_3m = caida_3m_dc + caida_3m_tt
                         llegan_6m = llegan_6m_dc + llegan_6m_tt
-                        caida_36m = caida_36m_dc + caida_36m_tt
+                        caida_36m = max(llegan_3m - llegan_6m, 0)
                         comision_3m = float(base.loc[base["LLEGA 3M"], "COMISION TOTAL"].sum()) if not base.empty else 0.0
                         comision_6m = float(base_tt.loc[base_tt["LLEGA 6M"], "COMISION TOTAL"].sum()) if not base_tt.empty else 0.0
                         rows.append({
@@ -2053,9 +2079,9 @@ def render_dashboard():
                             "% CAÍDA-3M": f"{(caida_3m / activados * 100) if activados else 0:.2f}%",
                             "COMISION TOTAL 3M": f"S/ {comision_3m:,.2f}",
                             "LLEGAN 6M": llegan_6m,
-                            "% RET. 3-6M": f"{(llegan_6m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
+                            "% RET. 3-6M": f"{(llegan_6m / activados * 100) if activados else 0:.2f}%",
                             "CAÍDA 3-6M": caida_36m,
-                            "% CAÍDA 3-6M": f"{(caida_36m / llegan_3m * 100) if llegan_3m else 0:.2f}%",
+                            "% CAÍDA 3-6M": f"{(caida_36m / activados * 100) if activados else 0:.2f}%",
                             "COMISION TOTAL 6M": f"S/ {comision_6m:,.2f}",
                         })
 
@@ -2075,9 +2101,9 @@ def render_dashboard():
                         "% CAÍDA-3M": f"{(total_caida_3m / total_act * 100) if total_act else 0:.2f}%",
                         "COMISION TOTAL 3M": f"S/ {total_comision_3m:,.2f}",
                         "LLEGAN 6M": total_6m,
-                        "% RET. 3-6M": f"{(total_6m / total_3m * 100) if total_3m else 0:.2f}%",
+                        "% RET. 3-6M": f"{(total_6m / total_act * 100) if total_act else 0:.2f}%",
                         "CAÍDA 3-6M": total_caida_36m,
-                        "% CAÍDA 3-6M": f"{(total_caida_36m / total_3m * 100) if total_3m else 0:.2f}%",
+                        "% CAÍDA 3-6M": f"{(total_caida_36m / total_act * 100) if total_act else 0:.2f}%",
                         "COMISION TOTAL 6M": f"S/ {total_comision_6m:,.2f}",
                     })
                     resumen = pd.DataFrame(rows)
@@ -2085,20 +2111,59 @@ def render_dashboard():
 
                 _npn_subvista = st.radio(
                     "Vista Resumen NPN",
-                    ["90 DIAS", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
+                    ["NPN MOVIL", "🏆 Ranking Supervisor", "👥 Ranking Asesores"],
                     horizontal=True,
                     label_visibility="collapsed",
                     key="npn_subvista_resumen"
                 )
 
-                if _npn_subvista == "90 DIAS":
+                if _npn_subvista == "NPN MOVIL":
                     if _f_serv == "FIJA":
-                        st.info("La pestaña 90 DIAS usa solo archivos móviles. Cambia Servicio a Todos o MOVIL para ver la información.")
+                        st.info("La pestaña NPN MOVIL usa solo archivos móviles. Cambia Servicio a Todos o MOVIL para ver la información.")
                     else:
+                        _docs_sup_90 = tuple()
+                        _secs_sup_90 = tuple()
+                        if _f_sup and _col_sup:
+                            _dvz_sup_90 = _df_npn.copy()
+                            if _col_tipo:
+                                _dvz_sup_90 = _dvz_sup_90[
+                                    _dvz_sup_90[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"
+                                ].copy()
+                            if _col_clip and _f_canal_sel:
+                                _dvz_sup_90 = _dvz_sup_90[
+                                    _dvz_sup_90[_col_clip].fillna("").astype(str).str.strip().str.upper()
+                                    .isin([str(c).upper() for c in _f_canal_sel])
+                                ].copy()
+                            _dvz_sup_90 = _dvz_sup_90[
+                                _dvz_sup_90[_col_sup].fillna("").astype(str).str.strip().isin(_f_sup)
+                            ].copy()
+                            try:
+                                _docs_sup_90 = tuple(sorted(set(
+                                    _obtener_documento_develz(_dvz_sup_90)
+                                    .fillna("")
+                                    .astype(str)
+                                    .str.replace(r"\D", "", regex=True)
+                                    .loc[lambda s: s != ""]
+                                    .tolist()
+                                )))
+                            except Exception:
+                                _docs_sup_90 = tuple()
+                            if _col_sec_npn and _col_sec_npn in _dvz_sup_90.columns:
+                                _secs_sup_90 = tuple(sorted(set(
+                                    _dvz_sup_90[_col_sec_npn]
+                                    .fillna("")
+                                    .astype(str)
+                                    .str.replace(r"\.0$", "", regex=True)
+                                    .str.replace(r"\D", "", regex=True)
+                                    .loc[lambda s: s != ""]
+                                    .tolist()
+                                )))
                         _resumen_90, _df_90 = _npn_construir_90_dias_movil(
                             tuple(_f_canal_sel if _f_canal_sel else ["D&C", "Teletalk"]),
                             tuple(_f_finst),
-                            "v2"
+                            _docs_sup_90,
+                            _secs_sup_90,
+                            "v3_supervisor"
                         )
                         if _df_90.empty:
                             st.warning("No se encontraron registros con COMISION TOTAL mayor a cero y FECHA OPERACION válida en CLARO_DC_MOVIL o CLARO_TELETALK_MOVIL.")
@@ -2124,10 +2189,139 @@ def render_dashboard():
                             </div>
                             """, unsafe_allow_html=True)
 
+                            try:
+                                _dvz_sup_map = _df_npn.copy()
+                                if _col_tipo:
+                                    _dvz_sup_map = _dvz_sup_map[
+                                        _dvz_sup_map[_col_tipo].fillna("").astype(str).str.strip().str.upper() == "MOVIL"
+                                    ].copy()
+                                if _col_clip and _f_canal_sel:
+                                    _dvz_sup_map = _dvz_sup_map[
+                                        _dvz_sup_map[_col_clip].fillna("").astype(str).str.strip().str.upper()
+                                        .isin([str(c).upper() for c in _f_canal_sel])
+                                    ].copy()
+                                _doc_sup_map = {}
+                                _sec_sup_map_chart = {}
+                                if _col_sup:
+                                    _sup_vals = _dvz_sup_map[_col_sup].fillna("Sin Supervisor").astype(str).str.strip().replace("", "Sin Supervisor")
+                                    try:
+                                        _doc_vals = (
+                                            _obtener_documento_develz(_dvz_sup_map)
+                                            .fillna("")
+                                            .astype(str)
+                                            .str.replace(r"\D", "", regex=True)
+                                        )
+                                        _doc_sup_map = {
+                                            d: s for d, s in zip(_doc_vals, _sup_vals)
+                                            if str(d).strip() and str(s).strip()
+                                        }
+                                    except Exception:
+                                        _doc_sup_map = {}
+                                    if _col_sec_npn and _col_sec_npn in _dvz_sup_map.columns:
+                                        _sec_vals = (
+                                            _dvz_sup_map[_col_sec_npn]
+                                            .fillna("")
+                                            .astype(str)
+                                            .str.replace(r"\.0$", "", regex=True)
+                                            .str.replace(r"\D", "", regex=True)
+                                        )
+                                        _sec_sup_map_chart = {
+                                            s: sup for s, sup in zip(_sec_vals, _sup_vals)
+                                            if str(s).strip() and str(sup).strip()
+                                        }
+
+                                def _norm_chart_id(v):
+                                    return "" if pd.isna(v) else re.sub(r"\D", "", str(v).strip().replace(".0", ""))
+
+                                def _row_supervisor_90(row):
+                                    for _c_doc in ["DNI CLIENTE", "DNI RUC", "DOCUMENTO", "Documento", "RUC"]:
+                                        if _c_doc in row.index:
+                                            _doc = _norm_chart_id(row.get(_c_doc, ""))
+                                            if _doc in _doc_sup_map:
+                                                return _doc_sup_map[_doc]
+                                    if "SEC" in row.index:
+                                        _sec = _norm_chart_id(row.get("SEC", ""))
+                                        if _sec in _sec_sup_map_chart:
+                                            return _sec_sup_map_chart[_sec]
+                                    return "Sin Supervisor"
+
+                                _chart_sup = _df_90.copy()
+                                _chart_sup["SUPERVISOR NPN"] = _chart_sup.apply(_row_supervisor_90, axis=1)
+                                _chart_sup["ETAPA 90 DIAS"] = _chart_sup.get("ETAPA 90 DIAS", "").fillna("").astype(str)
+                                _chart_sup["_ACTIVADO_CHART"] = (
+                                    ((_chart_sup["Canal"].eq("D&C")) & (_chart_sup["ESTADO COMBO"].eq("ACTIVADO"))) |
+                                    ((_chart_sup["Canal"].eq("Teletalk")) & (_chart_sup["ETAPA 90 DIAS"].eq("ACTIVADOS")))
+                                )
+                                _chart_sup["_LLEGA_3M_CHART"] = (
+                                    ((_chart_sup["Canal"].eq("D&C")) & (_chart_sup["ESTADO COMBO"].eq("ACTIVADO")) & (pd.to_numeric(_chart_sup.get("MESES IMEI", 0), errors="coerce").fillna(0) >= 3)) |
+                                    ((_chart_sup["Canal"].eq("Teletalk")) & (_chart_sup["ETAPA 90 DIAS"].eq("3M")))
+                                )
+                                _chart_sup["_LLEGA_6M_CHART"] = (
+                                    ((_chart_sup["Canal"].eq("D&C")) & pd.Series(False, index=_chart_sup.index)) |
+                                    ((_chart_sup["Canal"].eq("Teletalk")) & (_chart_sup["ETAPA 90 DIAS"].eq("6M")))
+                                )
+                                _sup_ret = (
+                                    _chart_sup.groupby("SUPERVISOR NPN", as_index=False)
+                                    .agg(Activados=("_ACTIVADO_CHART", "sum"), **{"Llegan 3M": ("_LLEGA_3M_CHART", "sum")})
+                                )
+                                _sup_ret = _sup_ret[_sup_ret["Activados"] > 0].copy()
+                                if not _sup_ret.empty:
+                                    _sup_ret["% Llegan 3M"] = (_sup_ret["Llegan 3M"] / _sup_ret["Activados"] * 100).round(2)
+                                    _sup_ret["% Llegan 6M"] = (
+                                        _chart_sup.groupby("SUPERVISOR NPN")["_LLEGA_6M_CHART"].sum()
+                                        .reindex(_sup_ret["SUPERVISOR NPN"])
+                                        .fillna(0)
+                                        .to_numpy()
+                                        / _sup_ret["Activados"].replace(0, pd.NA)
+                                        * 100
+                                    ).fillna(0).round(2)
+                                    _sup_ret = _sup_ret.sort_values(["% Llegan 3M", "% Llegan 6M", "Activados"], ascending=[False, False, False]).head(12)
+                                    _chart_pct = _sup_ret.melt(
+                                        id_vars=["SUPERVISOR NPN", "Activados", "Llegan 3M"],
+                                        value_vars=["% Llegan 3M", "% Llegan 6M"],
+                                        var_name="Etapa",
+                                        value_name="Porcentaje",
+                                    )
+                                    _llegan6_map = _chart_sup.groupby("SUPERVISOR NPN")["_LLEGA_6M_CHART"].sum().to_dict()
+                                    _chart_pct["Llegan 6M"] = _chart_pct["SUPERVISOR NPN"].map(_llegan6_map).fillna(0).astype(int)
+                                    _chart_pct["Etiqueta"] = _chart_pct["Porcentaje"].map(lambda x: f"{x:.1f}%")
+                                    import altair as alt
+                                    _bar_ret = (
+                                        alt.Chart(_chart_pct)
+                                        .mark_bar(cornerRadiusEnd=5)
+                                        .encode(
+                                            x=alt.X("Porcentaje:Q", title="% sobre activados", axis=alt.Axis(format=".0f")),
+                                            y=alt.Y("SUPERVISOR NPN:N", sort="-x", title="Supervisor"),
+                                            yOffset=alt.YOffset("Etapa:N"),
+                                            color=alt.Color("Etapa:N", scale=alt.Scale(domain=["% Llegan 3M", "% Llegan 6M"], range=["#0891b2", "#7c3aed"]), title="Etapa"),
+                                            tooltip=[
+                                                alt.Tooltip("SUPERVISOR NPN:N", title="Supervisor"),
+                                                alt.Tooltip("Activados:Q", title="Activados", format=","),
+                                                alt.Tooltip("Llegan 3M:Q", title="Llegan 3M", format=","),
+                                                alt.Tooltip("Llegan 6M:Q", title="Llegan 6M", format=","),
+                                                alt.Tooltip("Porcentaje:Q", title="%", format=".2f"),
+                                            ],
+                                        )
+                                        .properties(height=max(280, min(560, 42 * len(_sup_ret))), title="Supervisores por % que llegan a 3M y 6M")
+                                    )
+                                    _labels_ret = (
+                                        alt.Chart(_chart_pct)
+                                        .mark_text(align="left", baseline="middle", dx=5, fontWeight="bold", color="#0f172a")
+                                        .encode(
+                                            x="Porcentaje:Q",
+                                            y=alt.Y("SUPERVISOR NPN:N", sort="-x"),
+                                            yOffset=alt.YOffset("Etapa:N"),
+                                            text="Etiqueta:N",
+                                        )
+                                    )
+                                    st.altair_chart((_bar_ret + _labels_ret).configure_title(fontSize=15, anchor="start"), use_container_width=True)
+                            except Exception as _e_chart_npn:
+                                st.caption(f"No se pudo construir gráfico de retención por supervisor: {_e_chart_npn}")
+
                             java_table(
                                 _resumen_90,
                                 height=250,
-                                title="Resumen 90 DIAS",
+                                title="Resumen NPN MOVIL",
                                 subtitle="D&C: 3M por IMEI. Teletalk: activados base, 3M segunda caída, 6M tercera caída",
                                 accent="#059669",
                                 max_rows=50,
@@ -2136,16 +2330,19 @@ def render_dashboard():
                             _detalle_90 = _df_90.copy()
                             _detalle_90["DIAS DESDE OPERACION"] = _detalle_90["DIAS DESDE OPERACION"].astype(int)
                             _detalle_90["COMISION TOTAL"] = _detalle_90["COMISION TOTAL"].map(lambda x: f"S/ {float(x):,.2f}")
+                            _detalle_90_view = _detalle_90.head(300).copy()
+                            if len(_detalle_90) > len(_detalle_90_view):
+                                st.caption(f"Mostrando 300 de {len(_detalle_90):,} registros para mantener el dashboard rápido. La descarga incluye todo.")
                             java_table(
-                                _detalle_90,
+                                _detalle_90_view,
                                 height=520,
-                                title="Detalle 90 DIAS",
+                                title="Detalle NPN MOVIL",
                                 subtitle="CLARO_DC_MOVIL y CLARO_TELETALK_MOVIL",
                                 accent="#0f4287",
-                                max_rows=None,
+                                max_rows=300,
                             )
                             st.download_button(
-                                "Descargar 90 DIAS",
+                                "Descargar NPN MOVIL",
                                 data=_df_90.to_csv(index=False).encode("utf-8-sig"),
                                 file_name="npn_90_dias_movil.csv",
                                 mime="text/csv",
