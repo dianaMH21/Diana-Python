@@ -449,9 +449,44 @@ def _base_claro_pago(tabla_ventas):
     return resumen[cols]
 
 @st.cache_data(ttl=600, show_spinner=False)
+def _base_clawback_fija():
+    cols = ["SOT", "CLAWBACK"]
+    ruta = os.path.join(DATA_DIR, "CLAUBACK.csv")
+    if not os.path.exists(ruta):
+        return pd.DataFrame(columns=cols)
+
+    df = pd.DataFrame()
+    for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
+        try:
+            df = pd.read_csv(ruta, encoding=enc, sep=";", engine="python", on_bad_lines="skip")
+            df.columns = df.columns.astype(str).str.strip()
+            if len(df.columns) > 1:
+                break
+        except Exception:
+            df = pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    col_sot = encontrar_columna(df, ["SOT", "sot", "Sot"])
+    col_clawback = encontrar_columna(df, ["CLAWBACK", "Clawback", "clawback"])
+    if not col_sot or not col_clawback:
+        return pd.DataFrame(columns=cols)
+
+    base = pd.DataFrame({
+        "SOT": _normalizar_sot_series(df[col_sot]),
+        "CLAWBACK": pd.to_numeric(df[col_clawback], errors="coerce").fillna(0),
+    })
+    base = base[base["SOT"] != ""]
+    if base.empty:
+        return pd.DataFrame(columns=cols)
+    return base.groupby("SOT", as_index=False)["CLAWBACK"].sum()
+
+@st.cache_data(ttl=600, show_spinner=False)
 def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes, filtro_fecha_venta="Todos los meses"):
     cols_salida = ["Canal","SOT","Documento","SUPERVISOR","ASESOR","Nombre del Cliente","Departamento",
-                   "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago","COLA"]
+                   "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION ORIGINAL",
+                   "CLAWBACK","COMISION","Estado Pago","COLA"]
     try:
         df_m = get_tabla(tabla_maestro)
         if df_m.empty: return pd.DataFrame(columns=cols_salida)
@@ -492,9 +527,19 @@ def construir_detalle_fija_develz(tabla_maestro, tabla_claro, canal, filtro_mes,
             st.write(f"DEBUG {canal} | Pagadas SI:", (df.get("COMISIONES_CLARO", "").fillna("").astype(str).str.upper() == "SI").sum())
             st.write(f"DEBUG {canal} | Comisión mayor a 0:", (pd.to_numeric(df.get("COMISION_CLARO", 0), errors="coerce").fillna(0) > 0).sum())
         df["COMISION"] = pd.to_numeric(df.get("COMISION_CLARO", 0), errors="coerce").fillna(0)
+        df["COMISION ORIGINAL"] = df["COMISION"]
+        df_clawback = _base_clawback_fija()
+        if not df_clawback.empty:
+            df = df.merge(df_clawback, on="SOT", how="left")
+        else:
+            df["CLAWBACK"] = 0.0
+        df["CLAWBACK"] = pd.to_numeric(df.get("CLAWBACK", 0), errors="coerce").fillna(0)
+        df["_ORDEN_SOT_CLAWBACK"] = df.groupby("SOT").cumcount()
+        df.loc[df["_ORDEN_SOT_CLAWBACK"] > 0, "CLAWBACK"] = 0.0
+        df["COMISION"] = df["COMISION ORIGINAL"] - df["CLAWBACK"]
         df["COMISIONES_CLARO"] = df.get("COMISIONES_CLARO","").fillna("").astype(str).str.upper().str.strip().str.replace("Í","I",regex=False)
         df["Estado Pago"] = "CAÍDA"
-        df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION"] > 0), "Estado Pago"] = "PAGADA"
+        df.loc[(df["COMISIONES_CLARO"] == "SI") | (df["COMISION ORIGINAL"] > 0), "Estado Pago"] = "PAGADA"
         # FECHA INSTALACION: usar la del archivo CLARO cuando hay cruce, si no la de DEVELZ
         _fecha_claro = df.get("FECHA_INSTALACION_CLARO", pd.Series("", index=df.index)).fillna("")
         _fecha_develz = df["_FECHA_DT"].dt.strftime("%d/%m/%Y").fillna("")
@@ -2303,6 +2348,7 @@ def mostrar_detalle_fija_general():
 
     _vistas_fija = [
         "📋 Detalle Ventas",
+        "💸 CLAWBACK",
         "📆 Ventas por Día",
         "🏆 Ranking Supervisor",
         "👥 Ranking Asesores",
@@ -2326,7 +2372,8 @@ def mostrar_detalle_fija_general():
             if val == "CAÍDA":  return "background-color:#fee2e2;color:#991b1b;font-weight:700"
             return ""
         cols_mostrar = ["Canal","SOT","Documento","SUPERVISOR","ASESOR","Nombre del Cliente","Departamento",
-                        "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION","Estado Pago","COLA"]
+                        "FECHA INSTALACION","FECHA DE VENTA","TIPIS","Estado Operativo","COMISION ORIGINAL",
+                        "CLAWBACK","COMISION","Estado Pago","COLA"]
         for col in cols_mostrar:
             if col not in df_filtrado.columns: df_filtrado[col] = ""
         df_show = df_filtrado[cols_mostrar].copy()
@@ -2341,7 +2388,9 @@ def mostrar_detalle_fija_general():
             .drop(columns=["_ORDEN_PAGO", "_ORDEN_COMISION", "_ORDEN_FECHA"])
             .reset_index(drop=True)
         )
-        df_show["COMISION"] = pd.to_numeric(df_show["COMISION"], errors="coerce").fillna(0).map(formatear_moneda)
+        for _col_money in ["COMISION ORIGINAL", "CLAWBACK", "COMISION"]:
+            if _col_money in df_show.columns:
+                df_show[_col_money] = pd.to_numeric(df_show[_col_money], errors="coerce").fillna(0).map(formatear_moneda)
         java_table(df_show, height=450, title="Detalle ventas fija", subtitle="Base filtrada con estado final", accent="#0f4287", max_rows=250)
         _lbl_inst  = "-".join(filtro_mes)         if filtro_mes         else "todos"
         _lbl_venta = "-".join(filtro_fecha_venta) if filtro_fecha_venta else "todos"
@@ -2352,6 +2401,100 @@ def mostrar_detalle_fija_general():
             on_click=registrar_descarga,
             args=("Detalle Fija General", _nombre_csv, f"Instalacion: {_lbl_inst} | Venta: {_lbl_venta} | Canal: {filtro_canal}"))
         mostrar_claro_pagado_no_develz(filtro_mes, filtro_canal)
+
+    elif _vista_fija == "💸 CLAWBACK":
+        st.markdown("#### 💸 Detalle CLAWBACK")
+        base_cb = df_filtrado.copy()
+        for _col in ["SOT", "Canal", "SUPERVISOR", "ASESOR", "Nombre del Cliente", "Departamento",
+                     "FECHA INSTALACION", "FECHA DE VENTA", "COMISION ORIGINAL", "CLAWBACK", "COMISION", "Estado Pago", "COLA"]:
+            if _col not in base_cb.columns:
+                base_cb[_col] = "" if _col not in ["COMISION ORIGINAL", "CLAWBACK", "COMISION"] else 0
+
+        for _col_num in ["COMISION ORIGINAL", "CLAWBACK", "COMISION"]:
+            base_cb[_col_num] = pd.to_numeric(base_cb[_col_num], errors="coerce").fillna(0)
+
+        base_cb = base_cb[base_cb["CLAWBACK"] > 0].copy()
+
+        if base_cb.empty:
+            st.info("No hay SOT con CLAWBACK para los filtros seleccionados.")
+        else:
+            total_sot_cb = int(base_cb["SOT"].astype(str).nunique())
+            total_clawback = float(base_cb["CLAWBACK"].sum())
+            total_original = float(base_cb["COMISION ORIGINAL"].sum())
+            total_neto = float(base_cb["COMISION"].sum())
+            pct_descuento = (total_clawback / total_original * 100) if total_original > 0 else 0.0
+
+            c_cb1, c_cb2, c_cb3, c_cb4 = st.columns(4)
+            _kpi_card_html(c_cb1, "SOT con Clawback", f"{total_sot_cb:,}", "SOT afectadas", "#111827", "#111827")
+            _kpi_card_html(c_cb2, "Clawback Total", formatear_moneda(total_clawback), "Descuento aplicado", "#dc2626", "#dc2626")
+            _kpi_card_html(c_cb3, "Comisión Original", formatear_moneda(total_original), "Antes del descuento", "#0f4287", "#0f4287")
+            _kpi_card_html(c_cb4, "Comisión Neta", formatear_moneda(total_neto), f"Descuento {pct_descuento:.2f}%", "#059669", "#059669")
+
+            resumen_canal = (
+                base_cb.groupby("Canal", dropna=False)
+                .agg(
+                    SOT=("SOT", "nunique"),
+                    Clawback=("CLAWBACK", "sum"),
+                    Comision_Original=("COMISION ORIGINAL", "sum"),
+                    Comision_Neta=("COMISION", "sum"),
+                )
+                .reset_index()
+                .sort_values("Clawback", ascending=False)
+            )
+            resumen_canal["% Descuento"] = resumen_canal.apply(
+                lambda r: f"{(float(r['Clawback']) / float(r['Comision_Original']) * 100):.2f}%"
+                if float(r["Comision_Original"]) > 0 else "0.00%",
+                axis=1,
+            )
+            for _col_money in ["Clawback", "Comision_Original", "Comision_Neta"]:
+                resumen_canal[_col_money] = pd.to_numeric(resumen_canal[_col_money], errors="coerce").fillna(0).map(formatear_moneda)
+            resumen_canal = resumen_canal.rename(columns={
+                "Comision_Original": "Comision Original",
+                "Comision_Neta": "Comision Neta",
+            })
+
+            resumen_asesor = (
+                base_cb.groupby(["SUPERVISOR", "ASESOR"], dropna=False)
+                .agg(
+                    SOT=("SOT", "nunique"),
+                    Clawback=("CLAWBACK", "sum"),
+                    Comision_Original=("COMISION ORIGINAL", "sum"),
+                    Comision_Neta=("COMISION", "sum"),
+                )
+                .reset_index()
+                .sort_values("Clawback", ascending=False)
+                .head(100)
+            )
+            for _col_money in ["Clawback", "Comision_Original", "Comision_Neta"]:
+                resumen_asesor[_col_money] = pd.to_numeric(resumen_asesor[_col_money], errors="coerce").fillna(0).map(formatear_moneda)
+            resumen_asesor = resumen_asesor.rename(columns={
+                "Comision_Original": "Comision Original",
+                "Comision_Neta": "Comision Neta",
+            })
+
+            col_cb_a, col_cb_b = st.columns([1, 1.35])
+            with col_cb_a:
+                java_table(resumen_canal, height=250, title="Resumen por canal", subtitle="Clawback aplicado por canal", accent="#dc2626", max_rows=50)
+            with col_cb_b:
+                java_table(resumen_asesor, height=250, title="Top asesores con clawback", subtitle="Ordenado por descuento aplicado", accent="#6d0b8c", max_rows=100)
+
+            detalle_cb = base_cb[[
+                "Canal", "SOT", "SUPERVISOR", "ASESOR", "Nombre del Cliente", "Departamento",
+                "FECHA INSTALACION", "FECHA DE VENTA", "COMISION ORIGINAL", "CLAWBACK", "COMISION", "Estado Pago", "COLA"
+            ]].copy()
+            detalle_cb = detalle_cb.sort_values(["CLAWBACK", "COMISION ORIGINAL"], ascending=[False, False]).reset_index(drop=True)
+            detalle_export = detalle_cb.copy()
+            for _col_money in ["COMISION ORIGINAL", "CLAWBACK", "COMISION"]:
+                detalle_cb[_col_money] = pd.to_numeric(detalle_cb[_col_money], errors="coerce").fillna(0).map(formatear_moneda)
+
+            java_table(detalle_cb, height=450, title="Detalle CLAWBACK por SOT", subtitle="Comision original menos descuento aplicado", accent="#dc2626", max_rows=300)
+            _lbl_inst_cb  = "-".join(filtro_mes) if filtro_mes else "todos"
+            _lbl_venta_cb = "-".join(filtro_fecha_venta) if filtro_fecha_venta else "todos"
+            _nombre_cb = f"detalle_clawback_fija_{_lbl_inst_cb.replace(' ','_')}_venta_{_lbl_venta_cb.replace(' ','_')}_{filtro_canal}.csv"
+            st.download_button("⬇️ Descargar CLAWBACK", data=detalle_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                file_name=_nombre_cb, mime="text/csv", key="dl_det_clawback",
+                on_click=registrar_descarga,
+                args=("Detalle Fija General - CLAWBACK", _nombre_cb, f"Instalacion: {_lbl_inst_cb} | Venta: {_lbl_venta_cb} | Canal: {filtro_canal}"))
 
     elif _vista_fija == "📆 Ventas por Día":
         st.markdown("#### Ventas por día — Total vs Pagadas")
