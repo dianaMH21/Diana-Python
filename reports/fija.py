@@ -2477,11 +2477,36 @@ def mostrar_detalle_fija_general():
                 "Comision_Neta": "Comision Neta",
             })
 
+            resumen_supervisor = (
+                base_cb.groupby("SUPERVISOR", dropna=False)
+                .agg(
+                    SOT=("SOT", "nunique"),
+                    Clawback=("CLAWBACK", "sum"),
+                    Comision_Original=("COMISION ORIGINAL", "sum"),
+                    Comision_Neta=("COMISION", "sum"),
+                )
+                .reset_index()
+                .sort_values("Clawback", ascending=False)
+                .head(100)
+            )
+            resumen_supervisor["% Descuento"] = resumen_supervisor.apply(
+                lambda r: f"{(float(r['Clawback']) / float(r['Comision_Original']) * 100):.2f}%"
+                if float(r["Comision_Original"]) > 0 else "0.00%",
+                axis=1,
+            )
+            for _col_money in ["Clawback", "Comision_Original", "Comision_Neta"]:
+                resumen_supervisor[_col_money] = pd.to_numeric(resumen_supervisor[_col_money], errors="coerce").fillna(0).map(formatear_moneda)
+            resumen_supervisor = resumen_supervisor.rename(columns={
+                "Comision_Original": "Comision Original",
+                "Comision_Neta": "Comision Neta",
+            })
+
             col_cb_a, col_cb_b = st.columns([1, 1.35])
             with col_cb_a:
                 java_table(resumen_canal, height=250, title="Resumen por canal", subtitle="Clawback aplicado por canal", accent="#dc2626", max_rows=50)
             with col_cb_b:
                 java_table(resumen_asesor, height=250, title="Top asesores con clawback", subtitle="Ordenado por descuento aplicado", accent="#6d0b8c", max_rows=100)
+            java_table(resumen_supervisor, height=300, title="Top supervisores con clawback", subtitle="Ordenado por descuento aplicado", accent="#0f4287", max_rows=100)
 
             detalle_cb = base_cb[[
                 "Canal", "SOT", "SUPERVISOR", "ASESOR", "Nombre del Cliente", "Departamento",
