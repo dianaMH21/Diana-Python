@@ -351,6 +351,53 @@ def _sot_key_series(serie):
     s = s.str.lstrip("0")
     return s.replace(["nan","NaN","None","NONE","null","NULL","NaT","<NA>"], "")
 
+def _mes_label_series(serie):
+    dt = pd.to_datetime(serie, errors="coerce", dayfirst=True)
+    labels = pd.Series("", index=dt.index, dtype="object")
+    ok = dt.notna()
+    if ok.any():
+        labels.loc[ok] = dt.loc[ok].dt.month.map(MESES_ES).str.capitalize() + " " + dt.loc[ok].dt.year.astype(str)
+    return labels
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _sots_claro_instalacion_por_meses(filtro_mes_tuple, filtro_canal):
+    filtro_mes = set(filtro_mes_tuple or [])
+    sots = set()
+    total = 0
+    pagadas = 0
+    archivos = [
+        ("CLARO_DC_FIJA.csv", "D&C"),
+        ("CLARO_TELETALK_FIJA.csv", "Teletalk"),
+    ]
+    for archivo, canal in archivos:
+        if filtro_canal == "D&C" and canal != "D&C":
+            continue
+        if filtro_canal == "Teletalk" and canal != "Teletalk":
+            continue
+        df_c = preparar_fechas_fija(cargar_csv(archivo))
+        if df_c.empty:
+            continue
+        df_c = df_c.copy()
+        if filtro_mes and "FECHA INSTALACION" in df_c.columns:
+            df_c = df_c[_mes_label_series(df_c["FECHA INSTALACION"]).isin(filtro_mes)].copy()
+        col_sot = next((c for c in df_c.columns if c.strip().upper() == "SOT"), None)
+        if col_sot:
+            df_c["_SOT_NORM"] = _normalizar_sot_series(df_c[col_sot])
+            df_c = df_c[df_c["_SOT_NORM"] != ""].drop_duplicates(subset=["_SOT_NORM"]).copy()
+            sots.update(df_c["_SOT_NORM"].tolist())
+        total += len(df_c)
+        col_com = next((c for c in df_c.columns if c.strip().upper() == "COMISIONES"), None)
+        if col_com:
+            pagadas += int(
+                df_c[col_com].fillna("").astype(str).str.strip().str.upper()
+                .str.replace("Í", "I", regex=False)
+                .eq("SI")
+                .sum()
+            )
+        else:
+            pagadas += len(df_c)
+    return sorted(sots), int(total), int(pagadas)
+
 # --- Obtención de campos DEVELZ ---
 def _parse_fecha_develz_robusta(serie):
     if serie is None:
@@ -2176,10 +2223,11 @@ def mostrar_detalle_fija_general():
         badge_2="Teletalk Contact Center",
     )
 
-    _dfg_cache_version = "dfg_asesor_fix_v2"
+    _dfg_cache_version = "dfg_perf_clawback_v4"
     if st.session_state.get("_dfg_cache_version") != _dfg_cache_version:
         if "dfg_det_cache" in st.session_state:
             del st.session_state["dfg_det_cache"]
+        st.session_state["_dfg_estado_normalizado"] = False
         st.session_state["_dfg_cache_version"] = _dfg_cache_version
 
     # ── Carga única en session_state (no recarga por cada widget) ──────────────
@@ -2194,19 +2242,19 @@ def mostrar_detalle_fija_general():
             # Precalcular columnas de mes para filtrado vectorizado (sin .apply fila a fila)
             for _c, _key in [("FECHA INSTALACION","_MES_INST"), ("FECHA DE VENTA","_MES_VENTA")]:
                 if _c in _df.columns:
-                    _dt = pd.to_datetime(_df[_c], dayfirst=True, errors="coerce")
-                    _df[_key] = _dt.apply(lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else "")
+                    _df[_key] = _mes_label_series(_df[_c])
                 else:
                     _df[_key] = ""
             st.session_state["dfg_det_cache"] = _df
 
     df_det = st.session_state["dfg_det_cache"]
-    if "Estado Pago" in df_det.columns:
+    if "Estado Pago" in df_det.columns and not st.session_state.get("_dfg_estado_normalizado", False):
         _estado_cache = df_det["Estado Pago"].fillna("").astype(str).str.upper().str.strip()
         _estado_cache = _estado_cache.str.replace("Í", "I", regex=False).str.replace("Á", "A", regex=False)
         df_det = df_det.copy()
-        df_det["Estado Pago"] = _estado_cache.apply(lambda x: "PAGADA" if x == "PAGADA" else "CAÍDA")
+        df_det["Estado Pago"] = _estado_cache.where(_estado_cache.eq("PAGADA"), "CAÍDA")
         st.session_state["dfg_det_cache"] = df_det
+        st.session_state["_dfg_estado_normalizado"] = True
     # ── Invalidar cache si le faltan las columnas de mes precalculadas ──────
     if "_MES_INST" not in df_det.columns or "_MES_VENTA" not in df_det.columns:
         del st.session_state["dfg_det_cache"]; st.rerun()
@@ -2240,7 +2288,9 @@ def mostrar_detalle_fija_general():
         with col_f8:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Refrescar datos", key="dfg_refresh", help="Fuerza recarga desde los CSV"):
-                del st.session_state["dfg_det_cache"]; st.rerun()
+                del st.session_state["dfg_det_cache"]
+                st.session_state["_dfg_estado_normalizado"] = False
+                st.rerun()
 
     # ── Filtrado vectorizado (rápido, sin .apply fila a fila) ───────────────────
     df_filtrado = df_det
@@ -2249,28 +2299,15 @@ def mostrar_detalle_fija_general():
         # Fuente de verdad: SOTs instalados en el mes según CLARO.
         # Filtramos DEVELZ por esos SOTs para que la tabla muestre exactamente
         # las ventas instaladas en el mes, igual que la lógica de los KPIs.
-        _sots_claro_inst = set()
-        for _archivo_claro in ["CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv"]:
-            if filtro_canal == "D&C" and "TELETALK" in _archivo_claro: continue
-            if filtro_canal == "Teletalk" and _archivo_claro == "CLARO_DC_FIJA.csv": continue
-            _df_c = preparar_fechas_fija(cargar_csv(_archivo_claro))
-            if _df_c.empty: continue
-            if "FECHA INSTALACION" in _df_c.columns:
-                _df_c["_MES_CLARO"] = _df_c["FECHA INSTALACION"].apply(
-                    lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
-                )
-                _df_c = _df_c[_df_c["_MES_CLARO"].isin(filtro_mes)].copy()
-            _col_sot_claro = next((c for c in _df_c.columns if c.strip().upper() == "SOT"), None)
-            if _col_sot_claro:
-                _sots_claro_inst.update(
-                    _normalizar_sot_series(_df_c[_col_sot_claro].fillna("").astype(str)).tolist()
-                )
-        _sots_claro_inst.discard("")
+        _sots_claro_inst, _claro_total_filtro, _claro_pagadas_filtro = _sots_claro_instalacion_por_meses(tuple(filtro_mes), filtro_canal)
+        _sots_claro_inst = set(_sots_claro_inst)
         if _sots_claro_inst:
             df_filtrado = df_filtrado[df_filtrado["SOT"].isin(_sots_claro_inst)]
         else:
             # Fallback: si CLARO no devuelve nada, filtrar por _MES_INST de DEVELZ
             df_filtrado = df_filtrado[df_filtrado["_MES_INST"].isin(filtro_mes)]
+            _claro_total_filtro = 0
+            _claro_pagadas_filtro = 0
 
     if filtro_fecha_venta:  df_filtrado = df_filtrado[df_filtrado["_MES_VENTA"].isin(filtro_fecha_venta)]
     if filtro_canal   != "Todos": df_filtrado = df_filtrado[df_filtrado["Canal"]       == filtro_canal]
@@ -2293,44 +2330,12 @@ def mostrar_detalle_fija_general():
     # Cuando hay filtro de Fecha de Instalacion, Pagadas y Comision vienen de CLARO
     # filtrando por FECHA INSTALACION del mes seleccionado y COMISIONES == SI.
     if filtro_mes:
-        _claro_total = 0
-        _claro_pagadas = 0
-        _claro_comision = 0.0
-        for _archivo_claro in ["CLARO_DC_FIJA.csv", "CLARO_TELETALK_FIJA.csv"]:
-            if filtro_canal == "D&C" and "TELETALK" in _archivo_claro:
-                continue
-            if filtro_canal == "Teletalk" and _archivo_claro == "CLARO_DC_FIJA.csv":
-                continue
-            _df_c = preparar_fechas_fija(cargar_csv(_archivo_claro))
-            if _df_c.empty:
-                continue
-            if "FECHA INSTALACION" in _df_c.columns:
-                _df_c["_MES_CLARO"] = _df_c["FECHA INSTALACION"].apply(
-                    lambda d: f"{MESES_ES[d.month].capitalize()} {d.year}" if pd.notna(d) else ""
-                )
-                _df_c = _df_c[_df_c["_MES_CLARO"].isin(filtro_mes)].copy()
-            _col_sot_claro = next((c for c in _df_c.columns if c.strip().upper() == "SOT"), None)
-            if _col_sot_claro:
-                _df_c = _df_c.drop_duplicates(subset=[_col_sot_claro]).copy()
-            _claro_total += len(_df_c)
-            _col_com = next((c for c in _df_c.columns if c.strip().upper() == "COMISIONES"), None)
-            if _col_com:
-                _mask_si = _df_c[_col_com].fillna("").astype(str).str.strip().str.upper() == "SI"
-                _df_pagadas_claro = _df_c[_mask_si].copy()
-            else:
-                _df_pagadas_claro = _df_c.copy()
-            _claro_pagadas += len(_df_pagadas_claro)
-            _col_monto = next((c for c in _df_pagadas_claro.columns
-                               if c.strip().upper() in ["COMISION", "COMISIÓN", "MONTO", "COM ETAPA"]), None)
-            if _col_monto is not None:
-                _claro_comision += pd.to_numeric(_df_pagadas_claro[_col_monto], errors="coerce").fillna(0).sum()
-
-        if _claro_total > 0:
-            total = _claro_total
-            pagadas = _claro_pagadas
+        if _claro_total_filtro > 0:
+            total = _claro_total_filtro
+            pagadas = _claro_pagadas_filtro
             caidas = max(total - pagadas, 0)
             pct = (pagadas / total * 100) if total > 0 else 0.0
-        comision = _claro_comision
+        comision = pd.to_numeric(df_filtrado.get("COMISION", 0), errors="coerce").fillna(0).sum()
 
     pct_tv, ventas_tv, _total_pagadas_tv = calcular_pct_tv_fija(df_filtrado)
     ticket_promedio_fija = (float(comision) / pagadas) if pagadas > 0 else 0.0
