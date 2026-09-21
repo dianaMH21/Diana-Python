@@ -50,6 +50,23 @@ def _obtener_campo_movil_seguro(df, posibles, defecto="Sin datos"):
     if col: return df[col].fillna(defecto).astype(str).str.strip().replace("", defecto)
     return pd.Series([defecto] * len(df), index=df.index)
 
+def _limpiar_texto_tabla_movil_general(df, defecto=""):
+    if df is None or df.empty:
+        return df
+
+    limpio = df.copy()
+    valores_vacios = ["nan", "NaN", "None", "NONE", "null", "NULL", "NaT", "<NA>", "pd.NA"]
+    columnas_texto = limpio.select_dtypes(include=["object", "string"]).columns
+    for col in columnas_texto:
+        limpio[col] = (
+            limpio[col]
+            .fillna(defecto)
+            .astype(str)
+            .str.strip()
+            .replace(valores_vacios, defecto)
+        )
+    return limpio
+
 def _obtener_cliente_movil_teletalk(df):
     col_cliente = encontrar_columna(df, [
         "CLIENTE", "Cliente", "NOMBRE CLIENTE", "Nombre Cliente",
@@ -1060,9 +1077,195 @@ def construir_pagos_claro_movil_por_dni_mes(filtro_mes="Todos los meses", filtro
     if not bases: return pd.DataFrame(columns=cols)
     return pd.concat(bases, ignore_index=True).reset_index(drop=True)
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fecha_operacion_claro_dc_por_documento_orden():
+    df = construir_pagos_claro_movil_por_dni_mes("Todos los meses", "D&C")
+    cols = ["Canal", "DOCUMENTO_KEY", "_ORDEN_VENTA_MOVIL", "_FECHA_OPERACION_DT"]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    df = df.sort_values("_FECHA_OPERACION_DT", ascending=False, na_position="last").copy()
+    df["_ORDEN_VENTA_MOVIL"] = df.groupby(["Canal", "DOCUMENTO_KEY"]).cumcount()
+    return df[cols].copy()
+
 def _sumar_comision_real_unica(df):
     if df is None or df.empty or "COMISION_REAL" not in df.columns: return 0.0
     return float(pd.to_numeric(df["COMISION_REAL"], errors="coerce").fillna(0).sum())
+
+def _ordenar_por_documento_venta_movil(df, fecha_col):
+    base = pd.DataFrame(df).copy()
+    if base.empty:
+        return base
+    if "DOCUMENTO_KEY" not in base.columns:
+        base["DOCUMENTO_KEY"] = ""
+    base["_FECHA_ORDEN_MOVIL"] = pd.to_datetime(base.get(fecha_col), errors="coerce", dayfirst=True)
+    base = base.sort_values("_FECHA_ORDEN_MOVIL", ascending=False, na_position="last").copy()
+    base["_ORDEN_VENTA_MOVIL"] = base.groupby(["Canal", "DOCUMENTO_KEY"]).cumcount()
+    base["_KEY_CONCILIACION_MOVIL"] = (
+        base["Canal"].fillna("").astype(str).str.strip()
+        + "|"
+        + base["DOCUMENTO_KEY"].fillna("").astype(str).str.strip()
+        + "|"
+        + base["_ORDEN_VENTA_MOVIL"].astype(str)
+    )
+    return base
+
+def _normalizar_sec_movil_general(serie):
+    s = serie.fillna("").astype(str).str.strip()
+    s = s.str.replace("\u00a0", "", regex=False)
+    s = s.str.replace("\ufeff", "", regex=False)
+    s = s.str.replace(r"\.0+$", "", regex=True)
+    s = s.str.replace(r"[^0-9]", "", regex=True)
+    s = s.str.lstrip("0")
+    return s.replace(["nan", "NaN", "None", "NONE", "null", "NULL", "NaT", "<NA>"], "")
+
+def _agregar_llave_conciliacion_movil(base, fecha_col):
+    base = pd.DataFrame(base).copy()
+    if base.empty:
+        return base
+    if "DOCUMENTO_KEY" not in base.columns:
+        base["DOCUMENTO_KEY"] = ""
+    base["_KEY_CONCILIACION_FINAL"] = "DNI|" + base["DOCUMENTO_KEY"].fillna("").astype(str).str.strip()
+    return base
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _base_dvz_movil_para_conciliacion():
+    cols = ["Canal", "DOCUMENTO_KEY", "Documento", "FECHA DE VENTA"]
+    df = _leer_dvz_crudo()
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df.copy()
+    col_tipo = next((c for c in df.columns if c.strip().lower() == "tipo producto"), None)
+    col_clip = next((c for c in df.columns if c.strip().lower() == "datos adicionales - clip"), None)
+    if col_tipo:
+        df = df[df[col_tipo].fillna("").astype(str).str.strip().str.upper().eq("MOVIL")].copy()
+    canal_raw = pd.Series([""] * len(df), index=df.index, dtype="object")
+    if col_clip:
+        canal_raw = df[col_clip].fillna("").astype(str).str.strip().str.upper()
+    col_nodo = encontrar_columna_flexible(df, [
+        "Datos Instalación - Nodo", "Datos Instalacion - Nodo",
+        "DATOS INSTALACIÓN - NODO", "DATOS INSTALACION - NODO"
+    ])
+    if col_nodo:
+        nodo_raw = df[col_nodo].fillna("").astype(str).str.strip().str.upper()
+        canal_raw = canal_raw.where(canal_raw.ne(""), nodo_raw)
+    df["Canal"] = ""
+    df.loc[canal_raw.str.contains("D&C|\\bDC\\b|DAC", regex=True, na=False), "Canal"] = "D&C"
+    df.loc[canal_raw.str.contains("TELETALK|TELETAK|TLK|TK", regex=True, na=False), "Canal"] = "Teletalk"
+
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    documento, _ = _obtener_documento_movil_general(df)
+    fecha_dt, _ = _obtener_fecha_venta_movil_general(df)
+    salida = pd.DataFrame({
+        "Canal": df["Canal"],
+        "DOCUMENTO_KEY": documento,
+        "Documento": documento,
+        "FECHA DE VENTA": fecha_dt.dt.strftime("%d/%m/%Y").fillna(""),
+    })
+    salida = salida[(salida["Canal"] != "") & (salida["DOCUMENTO_KEY"] != "")].copy()
+    return salida[cols].reset_index(drop=True)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def obtener_claro_pagado_no_develz_movil(filtro_mes_tuple, filtro_canal):
+    cols = [
+        "Canal", "Documento", "Fecha Claro", "Cliente", "Tipo Operacion",
+        "Plan", "Comision Claro", "Estado Pago", "Motivo"
+    ]
+    filtro_mes = list(filtro_mes_tuple or [])
+    claro = construir_pagos_claro_movil_por_dni_mes("Todos los meses", filtro_canal)
+    if claro.empty:
+        return pd.DataFrame(columns=cols)
+
+    claro = claro.copy()
+    if filtro_mes and filtro_mes != ["Todos los meses"]:
+        fechas = pd.to_datetime(claro["_FECHA_OPERACION_DT"], errors="coerce")
+        mask = pd.Series(False, index=claro.index)
+        for mes_txt in filtro_mes:
+            m, y = parse_mes_anio(mes_txt)
+            if m and y:
+                mask |= ((fechas.dt.month == m) & (fechas.dt.year == y))
+        claro = claro[mask].copy()
+    if filtro_canal != "Todos":
+        claro = claro[claro["Canal"].eq(filtro_canal)].copy()
+
+    claro = claro[pd.to_numeric(claro.get("COMISION_REAL", 0), errors="coerce").fillna(0) > 0].copy()
+    if claro.empty:
+        return pd.DataFrame(columns=cols)
+
+    dev = _base_dvz_movil_para_conciliacion()
+
+    claro = _agregar_llave_conciliacion_movil(claro, "_FECHA_OPERACION_DT")
+    dev = _agregar_llave_conciliacion_movil(dev, "FECHA DE VENTA")
+    keys_develz = set(dev.loc[dev.get("_KEY_CONCILIACION_FINAL", "") != "", "_KEY_CONCILIACION_FINAL"].unique()) if not dev.empty else set()
+
+    faltantes = claro[
+        (claro["_KEY_CONCILIACION_FINAL"] != "") &
+        (~claro["_KEY_CONCILIACION_FINAL"].isin(keys_develz))
+    ].copy()
+    if faltantes.empty:
+        return pd.DataFrame(columns=cols)
+
+    faltantes["Fecha Claro"] = pd.to_datetime(faltantes["_FECHA_OPERACION_DT"], errors="coerce").dt.strftime("%d/%m/%Y").fillna("")
+    faltantes["Comision Claro"] = pd.to_numeric(faltantes["COMISION_REAL"], errors="coerce").fillna(0)
+    faltantes["Motivo"] = "CLARO lo paga, pero el DNI no aparece en DVZ"
+    for col in ["Cliente", "Documento", "Tipo Operacion", "Plan", "Estado Pago"]:
+        if col not in faltantes.columns:
+            faltantes[col] = ""
+    salida = faltantes[cols].copy()
+    return _limpiar_texto_tabla_movil_general(salida)
+
+def mostrar_claro_pagado_no_develz_movil(df_develz_all, filtro_mes, filtro_canal):
+    st.write("---")
+    st.markdown("#### 🔴 Ventas pagadas por CLARO que NO aparecen en DEVELZ")
+    st.caption("Este cuadro explica ventas pagadas por CLARO móvil que no se encontraron en DVZ.csv.")
+    df_faltantes = obtener_claro_pagado_no_develz_movil(tuple(filtro_mes or []), filtro_canal)
+    if df_faltantes.empty:
+        st.success("No hay ventas pagadas por CLARO faltantes en DEVELZ con los filtros seleccionados.")
+        return
+
+    total_doc = df_faltantes["Documento"].nunique() if "Documento" in df_faltantes.columns else len(df_faltantes)
+    total_comision = pd.to_numeric(df_faltantes["Comision Claro"], errors="coerce").fillna(0).sum()
+
+    def _mini(col, label, valor, color):
+        with col:
+            st.markdown(
+                f'<div style="background:rgba(255,255,255,.96);padding:14px;border-radius:8px;'
+                f'border:2px solid {color};text-align:center;margin-bottom:8px;">'
+                f'<span style="color:#4b5563;font-weight:800;font-size:10px;text-transform:uppercase;">{label}</span>'
+                f'<span style="color:{color};font-size:26px;font-weight:900;display:block;">{valor}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    c1, c2 = st.columns(2)
+    _mini(c1, "Documentos pagados no encontrados", f"{total_doc:,}", "#dc2626")
+    _mini(c2, "Comision no conciliada", formatear_moneda(total_comision), "#dc2626")
+
+    df_show = df_faltantes.copy()
+    df_show["Comision Claro"] = pd.to_numeric(df_show["Comision Claro"], errors="coerce").fillna(0).map(formatear_moneda)
+    java_table(
+        df_show,
+        height=320,
+        title="Ventas pagadas por CLARO no encontradas en DEVELZ",
+        subtitle="Conciliacion por DNI de cliente",
+        accent="#dc2626",
+        max_rows=300,
+    )
+
+    _lbl = "-".join(filtro_mes) if filtro_mes and filtro_mes != ["Todos los meses"] else "todos"
+    _nombre_csv = f"claro_pagado_no_develz_movil_{_lbl.replace(' ','_')}_{filtro_canal}.csv"
+    csv_export = df_faltantes.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    st.download_button(
+        "⬇️ Descargar ventas pagadas por CLARO no encontradas en DEVELZ",
+        data=csv_export,
+        file_name=_nombre_csv,
+        mime="text/csv",
+        key="dl_claro_pagado_no_develz_movil",
+        on_click=registrar_descarga,
+        args=("Claro pagado no DEVELZ Movil", _nombre_csv, f"Mes: {_lbl} | Canal: {filtro_canal}"),
+    )
 
 def _normalizar_producto_movil_general(serie):
     s = serie.fillna("").astype(str).str.strip()
@@ -1193,6 +1396,17 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
     if not bases_movil: return pd.DataFrame(columns=columnas_salida + ["Venta Valida"])
 
     movil_unicos = pd.concat(bases_movil, ignore_index=True)
+    if not movil_unicos.empty:
+        dc_fecha_claro = _fecha_operacion_claro_dc_por_documento_orden()
+        if not dc_fecha_claro.empty:
+            movil_unicos = movil_unicos.merge(
+                dc_fecha_claro.rename(columns={"_FECHA_OPERACION_DT": "_FECHA_INST_CLARO_DC"}),
+                on=["Canal", "DOCUMENTO_KEY", "_ORDEN_VENTA_MOVIL"],
+                how="left",
+            )
+            mask_dc = movil_unicos["Canal"].eq("D&C") & movil_unicos["_FECHA_INST_CLARO_DC"].notna()
+            movil_unicos.loc[mask_dc, "_FECHA_INSTALACION_DT"] = movil_unicos.loc[mask_dc, "_FECHA_INST_CLARO_DC"]
+            movil_unicos = movil_unicos.drop(columns=["_FECHA_INST_CLARO_DC"])
 
     claro = construir_pagos_claro_movil_por_dni_mes(filtro_mes, "Todos")
     if not claro.empty:
@@ -1257,7 +1471,8 @@ def construir_resumen_movil_general(filtro_mes="Todos los meses", usar_api=False
         if col not in df_all.columns:
             df_all[col] = ""
 
-    return df_all[columnas_salida + ["Venta Valida"]].reset_index(drop=True)
+    salida = df_all[columnas_salida + ["Venta Valida"]].reset_index(drop=True)
+    return _limpiar_texto_tabla_movil_general(salida)
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_meses_movil_general(usar_api=False):
@@ -2131,13 +2346,24 @@ def mostrar_detalle_movil_general():
         badge_2="Teletalk Contact Center",
     )
 
-    # Para Detalle Móvil General el filtro principal se alimenta SOLO de MOVIL_DC.csv y MOVIL_TELETALK.csv.
-    # No se mezclan meses de caídas/CLARO ni de fija.
-    meses_general = obtener_meses_movil_general()
-    meses = ["Todos los meses"] + sorted(
-        set(meses_general) - {"Todos los meses"},
-        key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0))
-    )
+    _movil_cache_version = "movil_det_dni_dvz_perf_v4"
+    if st.session_state.get("_movil_det_cache_version") != _movil_cache_version:
+        st.session_state.pop("movil_detalle_general_cache", None)
+        st.session_state["_movil_det_cache_version"] = _movil_cache_version
+
+    if "movil_detalle_general_cache" not in st.session_state:
+        st.session_state["movil_detalle_general_cache"] = construir_resumen_movil_general("Todos los meses")
+
+    df_general_all = st.session_state["movil_detalle_general_cache"]
+    if df_general_all is None:
+        df_general_all = pd.DataFrame()
+
+    if not df_general_all.empty and "_FECHA_VENTA_DT" in df_general_all.columns:
+        fechas_venta = pd.to_datetime(df_general_all["_FECHA_VENTA_DT"], errors="coerce").dropna()
+        meses_set = {f"{MESES_ES[f.month].capitalize()} {f.year}" for f in fechas_venta if _fecha_en_mes_cerrado(f)}
+        meses = ["Todos los meses"] + sorted(meses_set, key=lambda s: (int(s.split()[1]), MESES_MAP.get(s.split()[0].lower(), 0)))
+    else:
+        meses = obtener_meses_movil_general()
 
     _inject_filters_panel_style()
     with st.container():
@@ -2153,11 +2379,15 @@ def mostrar_detalle_movil_general():
             sel_canal = st.multiselect("Canal", ["D&C", "Teletalk"], default=[], key="movil_canal", placeholder="Todos los canales")
         filtro_canal = sel_canal[0] if len(sel_canal) == 1 else "Todos"
 
-        if True:
-            dfs_general = []
-            for mes in filtro_mes:
-                dfs_general.append(construir_resumen_movil_general(mes))
-            df_general = pd.concat(dfs_general, ignore_index=True) if dfs_general else pd.DataFrame()
+        df_general = df_general_all.copy()
+        if filtro_mes != ["Todos los meses"] and not df_general.empty and "_FECHA_VENTA_DT" in df_general.columns:
+            fechas_venta_filtro = pd.to_datetime(df_general["_FECHA_VENTA_DT"], errors="coerce")
+            mask_venta = pd.Series([False] * len(df_general), index=df_general.index)
+            for _mes_venta in filtro_mes:
+                _m, _y = parse_mes_anio(_mes_venta)
+                if _m and _y:
+                    mask_venta |= ((fechas_venta_filtro.dt.month == _m) & (fechas_venta_filtro.dt.year == _y))
+            df_general = df_general[mask_venta].copy()
 
         df_opciones = df_general.copy()
         if sel_canal and not df_opciones.empty:
@@ -2188,6 +2418,16 @@ def mostrar_detalle_movil_general():
             if not df_opciones.empty and "COLA" in df_opciones.columns:
                 colas_movil = sorted(df_opciones["COLA"].fillna("EXTERNO").astype(str).unique().tolist())
             sel_cola = st.selectbox("Cola", ["Todos"] + colas_movil, key="movil_cola")
+        with c8:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Refrescar datos", key="movil_det_refresh", help="Fuerza recarga del detalle móvil desde CSV"):
+                st.session_state.pop("movil_detalle_general_cache", None)
+                construir_resumen_movil_general.clear()
+                construir_pagos_claro_movil_por_dni_mes.clear()
+                _fecha_operacion_claro_dc_por_documento_orden.clear()
+                _base_dvz_movil_para_conciliacion.clear()
+                obtener_claro_pagado_no_develz_movil.clear()
+                st.rerun()
 
     if df_general.empty:
         st.warning(
@@ -2297,17 +2537,44 @@ def mostrar_detalle_movil_general():
                 args=("Detalle Móvil General", "resumen_general_movil.csv", f"Fecha Venta: {', '.join(filtro_mes)} | Canal: {filtro_canal}")
             )
 
-        st.markdown("#### Detalle de ventas")
+        st.markdown("#### Detalle de ventas DEVELZ con estado final")
         if df_filtrado.empty:
             st.warning("Sin detalle para mostrar.")
         else:
             columnas_detalle = [
                 "Canal", "Archivo", "FECHA DE VENTA", "Documento", "Tipo Operacion",
-                "Estado Pago", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR", "COLA"
+                "Estado Pago", "Cliente", "SUPERVISOR", "TIPIS", "ASESOR", "COLA", "COMISION_REAL"
             ]
             columnas_detalle = [c for c in columnas_detalle if c in df_filtrado.columns]
-            detalle = df_filtrado[columnas_detalle].copy()
-            st.dataframe(detalle, use_container_width=True, height=420)
+            detalle = _limpiar_texto_tabla_movil_general(df_filtrado[columnas_detalle].copy())
+            if "COMISION_REAL" in detalle.columns:
+                detalle["_ORDEN_COMISION"] = pd.to_numeric(detalle["COMISION_REAL"], errors="coerce").fillna(0)
+            else:
+                detalle["_ORDEN_COMISION"] = 0
+            if "Estado Pago" in detalle.columns:
+                _estado_detalle = detalle["Estado Pago"].fillna("").astype(str).str.upper().str.strip()
+                detalle["_ORDEN_PAGO"] = (_estado_detalle != "PAGADA").astype(int)
+            else:
+                detalle["_ORDEN_PAGO"] = 1
+            detalle["_ORDEN_FECHA"] = pd.to_datetime(detalle.get("FECHA DE VENTA"), errors="coerce", dayfirst=True)
+            detalle = (
+                detalle
+                .sort_values(["_ORDEN_PAGO", "_ORDEN_COMISION", "_ORDEN_FECHA"], ascending=[True, False, False])
+                .drop(columns=["_ORDEN_PAGO", "_ORDEN_COMISION", "_ORDEN_FECHA"], errors="ignore")
+                .reset_index(drop=True)
+            )
+            if "COMISION_REAL" in detalle.columns:
+                detalle = detalle.rename(columns={"COMISION_REAL": "COMISION"})
+                detalle["COMISION"] = pd.to_numeric(detalle["COMISION"], errors="coerce").fillna(0).map(formatear_moneda)
+
+            java_table(
+                detalle,
+                height=450,
+                title="Detalle ventas movil",
+                subtitle="Base DEVELZ filtrada con estado final de CLARO",
+                accent="#0f4287",
+                max_rows=300,
+            )
 
             st.download_button(
                 "⬇️ Descargar Detalle Móvil General en Excel",
@@ -2318,6 +2585,7 @@ def mostrar_detalle_movil_general():
                 on_click=registrar_descarga,
                 args=("Detalle Móvil General", "detalle_movil_general.xlsx", f"Fecha Venta: {', '.join(filtro_mes)} | Canal: {', '.join(sel_canal) if sel_canal else 'Todos'}")
             )
+            mostrar_claro_pagado_no_develz_movil(df_general_all, filtro_mes, filtro_canal)
 
     elif _vista_movil == "📆 Ventas por Día":
         titulo_periodo = "Ventas por mes" if len(filtro_mes) > 1 or filtro_mes[0] == "Todos los meses" else "Ventas por día"

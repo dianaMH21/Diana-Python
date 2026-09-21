@@ -3703,21 +3703,13 @@ def render_dashboard():
             def _leer_csv_local_directo_movil(nombre):
                 if nombre in _csv_local_movil_cache:
                     return _csv_local_movil_cache[nombre].copy()
-                ruta = os.path.join(DATA_DIR, nombre)
-                if not os.path.exists(ruta):
-                    return pd.DataFrame()
-                for enc in ["utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"]:
-                    for sep in [";", ",", "\t"]:
-                        try:
-                            df = pd.read_csv(ruta, encoding=enc, sep=sep, engine="python", on_bad_lines="skip")
-                            df.columns = df.columns.astype(str).str.strip()
-                            if len(df.columns) > 1:
-                                _csv_local_movil_cache[nombre] = df.copy()
-                                return df
-                        except Exception:
-                            continue
-                return pd.DataFrame()
+                df = cargar_csv(nombre)
+                if not df.empty:
+                    df.columns = df.columns.astype(str).str.strip()
+                _csv_local_movil_cache[nombre] = df.copy()
+                return df
 
+            @st.cache_data(ttl=3600, show_spinner=False)
             def _leer_dvz_local_movil(canal_filtro):
                 df = _leer_csv_local_directo_movil("DVZ.csv")
                 if df.empty:
@@ -3731,6 +3723,7 @@ def render_dashboard():
                 mask_clip = df[col_clip].fillna("").astype(str).str.strip().str.upper() == clip
                 return df[mask_tipo & mask_clip].copy()
 
+            @st.cache_data(ttl=3600, show_spinner=False)
             def _pagos_claro_movil_local(canal_filtro, mes):
                 archivo = "CLARO_DC_MOVIL.csv" if canal_filtro == "D&C" else "CLARO_TELETALK_MOVIL.csv"
                 df = _leer_csv_local_directo_movil(archivo)
@@ -3779,6 +3772,7 @@ def render_dashboard():
                     df = df[(df["_FECHA_OPERACION_DT"].dt.month == m) & (df["_FECHA_OPERACION_DT"].dt.year == y)].copy()
                 return df[["Canal", "DOCUMENTO_KEY", "Tipo Operacion", "COMISION_REAL"]].copy()
 
+            @st.cache_data(ttl=3600, show_spinner=False)
             def _netas_movil_pre_api(canal_filtro, mes):
                 df_mov = _leer_dvz_local_movil(canal_filtro)
                 if df_mov.empty:
@@ -3815,6 +3809,7 @@ def render_dashboard():
                 pagadas = com > 0
                 return int(pagadas.sum()), float(com[pagadas].sum())
 
+            @st.cache_data(ttl=3600, show_spinner=False)
             def _resumir_por_canal_movil(canal_filtro):
                 """
                 Replica EXACTAMENTE la lógica de mostrar_detalle_movil_general por cada mes:
@@ -3826,6 +3821,15 @@ def render_dashboard():
                 """
                 archivo_kpi = "MOVIL_DC.csv" if canal_filtro == "D&C" else "MOVIL_TELETALK.csv"
                 meses_lista = [m for m in obtener_meses_movil_general() if m != "Todos los meses"]
+                _df_kpi_base, _ = _leer_csv_movil_con_fallback([archivo_kpi])
+                if not _df_kpi_base.empty:
+                    _df_kpi_base = _filtrar_productos_brutos_movil_general(_df_kpi_base.copy())
+                    _fecha_kpi_base, _ = _obtener_fecha_venta_movil_general(_df_kpi_base)
+                    _df_kpi_base = _df_kpi_base.copy()
+                    _df_kpi_base["_FECHA_KPI_DT"] = _fecha_kpi_base
+                    _brutas_por_periodo = _df_kpi_base.groupby(_df_kpi_base["_FECHA_KPI_DT"].dt.to_period("M")).size().to_dict()
+                else:
+                    _brutas_por_periodo = {}
                 rows = []
                 for mes in meses_lista:
                     m_num, y_num = parse_mes_anio(mes)
@@ -3833,18 +3837,7 @@ def render_dashboard():
                         continue
 
                     # ── VENTAS BRUTAS: misma lógica que KPI "Total Ventas" ──────────────
-                    _df_kpi, _ = _leer_csv_movil_con_fallback([archivo_kpi])
-                    brutas = 0
-                    if not _df_kpi.empty:
-                        _df_kpi = _filtrar_productos_brutos_movil_general(_df_kpi.copy())
-                        _fecha_kpi, _ = _obtener_fecha_venta_movil_general(_df_kpi)
-                        _df_kpi = _df_kpi.copy()
-                        _df_kpi["_FECHA_KPI_DT"] = _fecha_kpi
-                        _df_kpi = _df_kpi[
-                            (_df_kpi["_FECHA_KPI_DT"].dt.month == m_num) &
-                            (_df_kpi["_FECHA_KPI_DT"].dt.year  == y_num)
-                        ].copy()
-                        brutas = len(_df_kpi)
+                    brutas = int(_brutas_por_periodo.get(pd.Period(year=y_num, month=m_num, freq="M"), 0))
 
                     # ── VENTAS NETAS / COMISION: construir_resumen_movil_general(mes) ──
                     netas, com = _netas_movil_pre_api(canal_filtro, mes)
